@@ -157,7 +157,7 @@ def upload():
     try:
         f.save(tmp)
         item = get_item()
-        item.upload(tmp, key=key, access_key=IA_ACCESS, secret_key=IA_SECRET,
+        item.upload(files={key: tmp}, access_key=IA_ACCESS, secret_key=IA_SECRET,
                     verbose=False, retries=3,
                     metadata={'x-archive-keep-old-version':'0'})
         logger.info(f"Upload success: {key} ({os.path.getsize(tmp)} bytes)")
@@ -208,7 +208,7 @@ def url_upload():
 
                 logger.info(f"Downloaded {downloaded} bytes, uploading to IA...")
                 item = get_item()
-                item.upload(tmp.name, key=key, access_key=IA_ACCESS,
+                item.upload(files={key: tmp.name}, access_key=IA_ACCESS,
                            secret_key=IA_SECRET, verbose=False, retries=2)
 
                 logger.info(f"URL upload success: {key}")
