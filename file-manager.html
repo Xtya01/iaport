@@ -1,272 +1,76 @@
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IA Drive</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css"/>
-<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
-<style>
-body{background:#000;color:#fff;font-family:Inter,system-ui}
-.k-card{background:#111;border:1px solid #222}
-.ctx{position:fixed;background:#111;border:1px solid #333;border-radius:8px;padding:4px;z-index:50;min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.8)}
-.ctx button{width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:6px;display:flex;align-items:center;gap:8px}
-.ctx button:hover{background:#222}
-.toast{position:fixed;bottom:20px;right:20px;padding:12px 16px;border-radius:10px;font-size:13px;z-index:100;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.6);display:flex;align-items:center;gap:8px;animation:slide.2s}
-.toast.success{background:#065f46;border:1px solid #047857;color:#d1fae5}
-.toast.error{background:#7f1d1d;border:1px solid #991b1b;color:#fee2e2}
-.toast.info{background:#111;border:1px solid #333;color:#e5e5e5}
-@keyframes slide{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
-.progress{height:2px;background:#333;overflow:hidden;border-radius:1px;margin-top:6px}
-.progress-bar{height:100%;background:#fff;transition:width.2s;width:0%}
-</style>
-</head>
-<body>
-<div id="login" class="h-screen flex items-center justify-center">
-  <div class="k-card p-8 rounded-2xl w-80">
-    <div class="flex items-center justify-center gap-2 mb-6"><i data-lucide="hard-drive" class="w-7 h-7"></i><h1 class="text-2xl font-bold">IA Drive</h1></div>
-    <input id="pin" type="password" placeholder="PIN" class="w-full p-3 rounded-lg bg-black border border-zinc-800 mb-3 focus:outline-none focus:border-zinc-600">
-    <div id="loginErr" class="hidden text-red-400 text-xs mb-3"></div>
-    <button onclick="doLogin()" class="w-full bg-white text-black p-3 rounded-lg font-semibold hover:bg-zinc-200">Unlock</button>
-  </div>
-</div>
 
-<div id="app" class="hidden h-screen flex">
-  <aside class="w-60 k-card p-4 hidden md:block">
-    <h2 class="font-bold mb-4 flex items-center gap-2"><i data-lucide="hard-drive" class="w-4 h-4"></i>IA Drive</h2>
-    <nav class="space-y-1 text-sm" id="filters">
-      <button data-t="all" class="filter w-full flex items-center gap-2 p-2 rounded bg-zinc-800"><i data-lucide="folder" class="w-4 h-4"></i>All Files</button>
-      <button data-t="videos" class="filter w-full flex items-center gap-2 p-2 rounded hover:bg-zinc-800"><i data-lucide="film" class="w-4 h-4"></i>Videos</button>
-      <button data-t="audio" class="filter w-full flex items-center gap-2 p-2 rounded hover:bg-zinc-800"><i data-lucide="music" class="w-4 h-4"></i>Audio</button>
-      <button data-t="images" class="filter w-full flex items-center gap-2 p-2 rounded hover:bg-zinc-800"><i data-lucide="image" class="w-4 h-4"></i>Images</button>
-      <button data-t="documents" class="filter w-full flex items-center gap-2 p-2 rounded hover:bg-zinc-800"><i data-lucide="file-text" class="w-4 h-4"></i>Documents</button>
-    </nav>
-    <div class="mt-6 pt-4 border-t border-zinc-800 space-y-1">
-      <button onclick="up.click()" class="w-full flex items-center gap-2 p-2 rounded hover:bg-zinc-800 text-sm"><i data-lucide="upload" class="w-4 h-4"></i>Upload Files</button>
-      <button onclick="showUrl()" class="w-full flex items-center gap-2 p-2 rounded hover:bg-zinc-800 text-sm"><i data-lucide="link" class="w-4 h-4"></i>From URL</button>
-      <input id="up" type="file" multiple class="hidden">
-    </div>
-  </aside>
+<!DOCTYPE html><html class="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IA Drive</title><script src="https://cdn.tailwindcss.com"></script><script src="https://unpkg.com/lucide@latest"></script><style>body{background:#000;color:#fff;font-family:Inter} .k{background:#111;border:1px solid #222} .toast{position:fixed;bottom:20px;right:20px;padding:12px 16px;border-radius:8px;z-index:100} .success{background:#065f46} .error{background:#7f1d1d} .info{background:#111;border:1px solid #333}</style></head><body>
+<div id="login" class="h-screen flex items-center justify-center"><div class="k p-8 rounded-2xl w-80"><h1 class="text-2xl font-bold mb-6 text-center">IA Drive</h1><input id="pin" type="password" placeholder="PIN" class="w-full p-3 rounded bg-black border border-zinc-800 mb-3"><button onclick="doLogin()" class="w-full bg-white text-black p-3 rounded font-semibold">Unlock</button></div></div>
+<div id="app" class="hidden h-screen flex flex-col"><header class="k p-3 flex gap-2"><input id="q" placeholder="Search" class="flex-1 bg-black border border-zinc-800 rounded px-3 py-2"><button onclick="load()" class="p-2 k rounded"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button><button onclick="showUrl()" class="px-3 py-2 bg-white text-black rounded text-sm">URL Upload</button></header><div class="flex-1 overflow-auto p-4"><div id="grid" class="grid grid-cols-4 gap-3"></div></div></div>
 
-  <main class="flex-1 flex flex-col min-w-0">
-    <header class="k-card p-3 flex gap-2 items-center">
-      <input id="q" placeholder="Search files..." class="flex-1 bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600">
-      <button onclick="toggleView()" class="p-2 k-card rounded-lg hover:bg-zinc-800" title="Toggle view"><i data-lucide="layout-grid" class="w-4 h-4"></i></button>
-      <button onclick="load()" class="p-2 k-card rounded-lg hover:bg-zinc-800" title="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
-    </header>
-
-    <div id="bulk" class="hidden k-card mx-3 mt-3 p-2.5 flex items-center gap-3 text-sm">
-      <span id="selcount" class="font-medium">0 selected</span>
-      <div class="flex-1"></div>
-      <button onclick="bulkDelete()" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-xs font-medium">Delete Selected</button>
-      <button onclick="clearSel()" class="px-3 py-1.5 k-card hover:bg-zinc-800 rounded-lg text-xs">Clear</button>
-    </div>
-
-    <div class="flex-1 overflow-auto p-4" id="drop">
-      <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3"></div>
-      <div id="list" class="hidden space-y-1"></div>
-      <div id="empty" class="hidden text-center py-20"><i data-lucide="folder-open" class="w-12 h-12 mx-auto text-zinc-800 mb-3"></i><p class="text-zinc-600">No files found</p></div>
-      <div id="loading" class="text-center py-20"><div class="inline-block w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div></div>
-    </div>
-  </main>
-</div>
-
-<div id="ctx" class="ctx hidden"></div>
-
-<div id="urlmodal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-  <div class="k-card p-6 rounded-2xl w-full max-w-md">
-    <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="link" class="w-5 h-5"></i>Upload from URL</h3>
-    <input id="urlin" placeholder="https://example.com/file.mp4" class="w-full p-3 bg-black border border-zinc-800 rounded-lg mb-3 text-sm focus:outline-none focus:border-zinc-600">
-    <input id="urlname" placeholder="Custom filename (optional)" class="w-full p-3 bg-black border border-zinc-800 rounded-lg mb-4 text-sm focus:outline-none focus:border-zinc-600">
-    <div id="urlerr" class="hidden text-red-400 text-xs mb-3"></div>
-    <div class="flex gap-2"><button onclick="doUrl()" class="flex-1 bg-white text-black py-2.5 rounded-lg font-medium hover:bg-zinc-200">Upload</button><button onclick="hideUrl()" class="flex-1 k-card py-2.5 rounded-lg hover:bg-zinc-800">Cancel</button></div>
-  </div>
-</div>
-
-<div id="player" class="hidden fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4">
-  <div class="w-full max-w-6xl"><div class="flex justify-between items-center mb-3"><h3 id="ptitle" class="font-medium truncate"></h3><button onclick="closePlayer()" class="p-2 hover:bg-zinc-800 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button></div><div id="playwrap" class="bg-black rounded-xl overflow-hidden"></div></div>
-</div>
-
-<div id="toastContainer" class="fixed bottom-4 right-4 z-[100] space-y-2"></div>
+<div id="urlmodal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center"><div class="k p-6 rounded-xl w-96"><h3 class="font-bold mb-4">Upload from URL</h3><input id="urlin" placeholder="https://" class="w-full p-2 bg-black border border-zinc-800 rounded mb-2"><input id="urlname" placeholder="filename (optional)" class="w-full p-2 bg-black border border-zinc-800 rounded mb-4"><div class="flex gap-2"><button onclick="doUrl()" class="flex-1 bg-white text-black py-2 rounded">Upload</button><button onclick="hideUrl()" class="flex-1 k py-2 rounded">Cancel</button></div><div id="urlstatus" class="text-xs text-zinc-500 mt-3"></div></div></div>
+<div id="toasts" class="fixed bottom-4 right-4 space-y-2"></div>
 
 <script>
-lucide.createIcons();
-let view='grid', type='all', files=[], selected=new Set(), ctxFile=null, timer=null;
+lucide.createIcons(); let files=[];
+function toast(m,k='info'){const t=document.createElement('div');t.className='toast '+k;t.textContent=m;toasts.appendChild(t);setTimeout(()=>t.remove(),4000)}
+async function api(p,o){const r=await fetch(p,{...o,credentials:'include',headers:{'Content-Type':'application/json',...o?.headers}});if(!r.ok)throw new Error((await r.json()).error);return r.json()}
+async function doLogin(){await api('/api/login',{method:'POST',body:JSON.stringify({pin:pin.value})});login.classList.add('hidden');app.classList.remove('hidden');load()}
+async function load(){const d=await api('/api/list');files=d.files;grid.innerHTML=files.map(f=>`<div class="k p-3 rounded"><div class="text-sm truncate">${f.name}</div><div class="text-xs text-zinc-600">${(f.size/1024/1024).toFixed(1)} MB</div></div>`).join('')}
+function showUrl(){urlmodal.classList.remove('hidden')} function hideUrl(){urlmodal.classList.add('hidden')}
 
-function showToast(msg, kind='info', duration=4000){
-  const c=document.getElementById('toastContainer');
-  const t=document.createElement('div');
-  t.className='toast '+kind;
-  const icon=kind==='success'?'check-circle':kind==='error'?'alert-circle':'info';
-  t.innerHTML='<i data-lucide="'+icon+'" class="w-4 h-4 flex-shrink-0"></i><div class="flex-1"><div>'+msg+'</div><div class="progress hidden"><div class="progress-bar"></div></div></div>';
-  c.appendChild(t); lucide.createIcons();
-  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(100%)';setTimeout(()=>t.remove(),200)}, duration);
-  return t;
-}
-
-async function api(path, opts={}){
-  try{
-    const r=await fetch(path,{...opts,credentials:'include'});
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(data.error || 'Request failed ('+r.status+')');
-    return data;
-  }catch(e){
-    showToast(e.message,'error',5000);
-    throw e;
-  }
-}
-
-async function doLogin(){
-  const pin=document.getElementById('pin').value;
-  const err=document.getElementById('loginErr');
-  err.classList.add('hidden');
-  try{
-    await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
-    document.getElementById('login').classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
-    showToast('Welcome to IA Drive','success');
-    load();
-  }catch(e){
-    err.textContent='Invalid PIN';
-    err.classList.remove('hidden');
-  }
-}
-
-function debounceLoad(){clearTimeout(timer);timer=setTimeout(load,300)}
-document.getElementById('q').addEventListener('input',debounceLoad);
-
-function getIcon(n){const e=n.split('.').pop().toLowerCase();const m={mp3:'file-music',wav:'file-music',flac:'file-music',m4a:'file-music',aac:'file-music',ogg:'file-music',mp4:'file-video',mkv:'file-video',webm:'file-video',mov:'file-video',avi:'file-video','m4v':'file-video',jpg:'file-image',jpeg:'file-image',png:'file-image',gif:'file-image',webp:'file-image',svg:'file-image',pdf:'file-text',doc:'file-text',docx:'file-text',txt:'file-text',md:'file-text',zip:'file-archive',rar:'file-archive','7z':'file-archive',gz:'file-archive',torrent:'download',sqlite:'database',db:'database'};return m[e]||'file'}
-
-async function load(){
-  document.getElementById('loading').classList.remove('hidden');
-  document.getElementById('grid').classList.add('hidden');
-  document.getElementById('list').classList.add('hidden');
-  try{
-    const q=document.getElementById('q').value;
-    const d=await api('/api/list?type='+type+'&q='+encodeURIComponent(q));
-    files=d.files||[];
-    render();
-  }catch(e){
-    showToast('Failed to load files','error');
-  }finally{
-    document.getElementById('loading').classList.add('hidden');
-  }
-}
-
-function render(){
-  const g=document.getElementById('grid'), l=document.getElementById('list'), empty=document.getElementById('empty');
-  g.innerHTML=''; l.innerHTML='';
-  if(!files.length){empty.classList.remove('hidden');g.classList.add('hidden');l.classList.add('hidden');return}
-  empty.classList.add('hidden'); g.classList.toggle('hidden',view!=='grid'); l.classList.toggle('hidden',view==='grid');
-
-  files.forEach(f=>{
-    const icon=getIcon(f.name); const size=(f.size/1024/1024).toFixed(1)+' MB'; const isSel=selected.has(f.key);
-    const safeKey=f.key.replace(/'/g,"\\'");
-
-    if(view==='grid'){
-      const d=document.createElement('div');
-      d.className='k-card rounded-xl p-2.5 cursor-pointer hover:border-zinc-700 transition-all group relative';
-      d.innerHTML='<input type="checkbox" '+(isSel?'checked':'')+' class="absolute top-2.5 left-2.5 w-4 h-4 z-10 accent-white" onclick="event.stopPropagation();toggleSel(\''+safeKey+'\',this.checked)"><div class="aspect-video bg-zinc-950 rounded-lg flex items-center justify-center mb-2.5 overflow-hidden"><i data-lucide="'+icon+'" class="w-8 h-8 text-zinc-700 group-hover:text-zinc-500 transition-colors"></i></div><div class="text-xs truncate px-0.5 font-medium">'+f.name+'</div><div class="text-[11px] text-zinc-600 px-0.5 mt-0.5">'+size+'</div>';
-      d.oncontextmenu=e=>{e.preventDefault();showCtx(e,f)}; d.onclick=()=>openFile(f); g.appendChild(d);
-    }else{
-      const r=document.createElement('div');
-      r.className='flex items-center gap-3 p-2.5 hover:bg-zinc-900/50 rounded-lg cursor-pointer group';
-      r.innerHTML='<input type="checkbox" '+(isSel?'checked':'')+' class="accent-white" onclick="event.stopPropagation();toggleSel(\''+safeKey+'\',this.checked)"><i data-lucide="'+icon+'" class="w-4 h-4 text-zinc-600 flex-shrink-0"></i><span class="flex-1 truncate text-sm">'+f.name+'</span><span class="text-xs text-zinc-600 w-20 text-right">'+size+'</span><span class="text-xs text-zinc-700 w-24 text-right">'+(f.modified?new Date(f.modified).toLocaleDateString():'')+'</span>';
-      r.oncontextmenu=e=>{e.preventDefault();showCtx(e,f)}; r.onclick=()=>openFile(f); l.appendChild(r);
-    }
-  });
-  lucide.createIcons(); updateBulk();
-}
-
-function toggleSel(k,v){v?selected.add(k):selected.delete(k);updateBulk();render()}
-function updateBulk(){const b=document.getElementById('bulk');if(selected.size){b.classList.remove('hidden');document.getElementById('selcount').textContent=selected.size+' selected'}else{b.classList.add('hidden')}}
-function clearSel(){selected.clear();updateBulk();render()}
-
-async function bulkDelete(){
-  if(!selected.size) return;
-  if(!confirm('Delete '+selected.size+' file(s)? This cannot be undone.')) return;
-  const toast=showToast('Deleting '+selected.size+' files...','info',10000);
-  try{
-    await api('/api/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',keys:[...selected]})});
-    selected.clear(); load(); showToast('Deleted successfully','success');
-  }catch(e){showToast('Delete failed','error')}
-}
-
-function showCtx(e,f){
-  ctxFile=f; const c=document.getElementById('ctx');
-  c.innerHTML='<button onclick="ctxAction(\'open\')"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Open</button><button onclick="ctxAction(\'download\')"><i data-lucide="download" class="w-3.5 h-3.5"></i>Download</button><button onclick="ctxAction(\'copy\')"><i data-lucide="link" class="w-3.5 h-3.5"></i>Copy Link</button><button onclick="ctxAction(\'share\')"><i data-lucide="share-2" class="w-3.5 h-3.5"></i>Share</button><div class="h-px bg-zinc-800 my-1"></div><button onclick="ctxAction(\'delete\')" style="color:#f87171"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>Delete</button>';
-  c.style.left=Math.min(e.pageX,window.innerWidth-200)+'px'; c.style.top=Math.min(e.pageY,window.innerHeight-200)+'px'; c.classList.remove('hidden'); lucide.createIcons();
-}
-document.addEventListener('click',e=>{if(!e.target.closest('#ctx'))document.getElementById('ctx').classList.add('hidden')});
-
-async function ctxAction(a){
-  document.getElementById('ctx').classList.add('hidden'); if(!ctxFile) return; const f=ctxFile;
-  try{
-    if(a==='open') openFile(f);
-    else if(a==='download'){window.open(f.direct,'_blank'); showToast('Download started','info')}
-    else if(a==='copy'){await navigator.clipboard.writeText(f.url); showToast('Link copied','success')}
-    else if(a==='share'){const r=await api('/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:f.key})}); await navigator.clipboard.writeText(location.origin+r.url); showToast('Share link copied','success')}
-    else if(a==='delete'){if(confirm('Delete "'+f.name+'"?')){await api('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:f.key})}); load(); showToast('Deleted','success')}}
-  }catch(e){/* error already shown by api() */}
-}
-
-function openFile(f){
-  if(f.type==='video'||f.type==='audio'){
-    document.getElementById('player').classList.remove('hidden');
-    document.getElementById('ptitle').textContent=f.name;
-    document.getElementById('playwrap').innerHTML=f.type==='video'?'<video id="p" controls playsinline crossorigin><source src="'+f.url+'"></video>':'<audio id="p" controls crossorigin style="width:100%"><source src="'+f.url+'"></audio>';
-    new Plyr('#p',{controls:['play-large','play','progress','current-time','mute','volume','settings','fullscreen']});
-  }else if(f.type==='image'){
-    window.open(f.url,'_blank');
-  }else{
-    window.open(f.url,'_blank');
-  }
-}
-function closePlayer(){document.getElementById('player').classList.add('hidden');document.getElementById('playwrap').innerHTML=''}
-
-async function uploadFiles(list){
-  const files=[...list];
-  for(const file of files){
-    const toast=showToast('Uploading '+file.name+'...','info',30000);
-    const bar=toast.querySelector('.progress'); const fill=toast.querySelector('.progress-bar'); bar.classList.remove('hidden');
-    try{
-      const fd=new FormData(); fd.append('file',file); fd.append('key',file.name);
-      const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'});
-      const d=await r.json();
-      if(!r.ok) throw new Error(d.error||'Upload failed');
-      fill.style.width='100%'; toast.className='toast success'; toast.querySelector('div>div').textContent='✓ '+file.name+' uploaded';
-      setTimeout(()=>toast.remove(),2000);
-    }catch(e){
-      toast.className='toast error'; toast.querySelector('div>div').textContent='✗ '+file.name+': '+e.message; bar.classList.add('hidden');
-    }
-  }
-  load();
-}
-
-function handleDrop(e){e.preventDefault();e.currentTarget.classList.remove('ring-2');if(e.dataTransfer.files.length)uploadFiles(e.dataTransfer.files)}
-document.getElementById('drop').addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('ring-2','ring-zinc-700')});
-document.getElementById('drop').addEventListener('dragleave',e=>e.currentTarget.classList.remove('ring-2'));
-
-function showUrl(){document.getElementById('urlmodal').classList.remove('hidden');document.getElementById('urlin').focus()}
-function hideUrl(){document.getElementById('urlmodal').classList.add('hidden');document.getElementById('urlerr').classList.add('hidden')}
 async function doUrl(){
-  const url=document.getElementById('urlin').value.trim(), name=document.getElementById('urlname').value.trim(), err=document.getElementById('urlerr');
-  if(!url){err.textContent='Enter a URL';err.classList.remove('hidden');return}
-  hideUrl(); const toast=showToast('Downloading from URL...','info',30000);
-  try{
-    await api('/api/url-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,key:name||undefined})});
-    toast.remove(); showToast('URL upload complete','success'); load();
-  }catch(e){toast.remove()}
-  document.getElementById('urlin').value='';document.getElementById('urlname').value='';
+  const url = urlin.value.trim(); const name = urlname.value || url.split('/').pop().split('?')[0];
+  hideUrl(); urlstatus.textContent='';
+  
+  try {
+    // 1. Check size
+    const head = await fetch(url, {method:'HEAD', mode:'cors'}).catch(()=>null);
+    let size = 0;
+    if(head && head.ok) size = parseInt(head.headers.get('content-length')||'0');
+    
+    if(size > 0 && size < 1024*1024*1024) {
+      // <1GB: use server-side (VPS downloads)
+      toast(`Server downloading ${(size/1024/1024).toFixed(0)}MB...`, 'info');
+      await api('/api/url-upload',{method:'POST',body:JSON.stringify({url,key:name})});
+      toast('✓ Upload complete', 'success');
+    } else {
+      // >1GB or unknown size: browser streams direct to IA
+      toast(`Large file detected - streaming direct to IA`, 'info');
+      
+      // Get size via range request if HEAD failed
+      if(!size){
+        const test = await fetch(url, {headers:{Range:'bytes=0-0'}});
+        const cr = test.headers.get('content-range');
+        if(cr) size = parseInt(cr.split('/')[1]);
+      }
+      
+      const chunkSize = 100*1024*1024; // 100MB
+      const parts = Math.ceil(size / chunkSize);
+      
+      // Init multipart
+      const init = await api('/api/multipart/init',{method:'POST',body:JSON.stringify({key:name})});
+      const uploaded = [];
+      
+      for(let i=0; i<parts; i++){
+        const start = i*chunkSize;
+        const end = Math.min(start+chunkSize-1, size-1);
+        
+        // Fetch chunk from source
+        const chunkRes = await fetch(url, {headers:{Range:`bytes=${start}-${end}`}});
+        const chunk = await chunkRes.arrayBuffer();
+        
+        // Get presigned URL
+        const {url:putUrl} = await api('/api/multipart/part',{method:'POST',body:JSON.stringify({key:name,uploadId:init.uploadId,part:i+1})});
+        
+        // Upload to IA directly
+        const put = await fetch(putUrl, {method:'PUT', body:chunk});
+        uploaded.push({ETag: put.headers.get('ETag'), PartNumber:i+1});
+        
+        toast(`Uploading ${name}: ${Math.round((i+1)/parts*100)}%`, 'info');
+      }
+      
+      await api('/api/multipart/complete',{method:'POST',body:JSON.stringify({key:name,uploadId:init.uploadId,parts:uploaded})});
+      toast('✓ Large upload complete', 'success');
+    }
+    load();
+  } catch(e){
+    toast('Upload failed: '+e.message, 'error');
+  }
 }
-
-function toggleView(){view=view==='grid'?'list':'grid';render();showToast(view==='grid'?'Grid view':'List view','info',1500)}
-
-document.getElementById('up').addEventListener('change',e=>uploadFiles(e.target.files));
-document.querySelectorAll('.filter').forEach(b=>b.onclick=()=>{document.querySelectorAll('.filter').forEach(x=>x.classList.remove('bg-zinc-800'));b.classList.add('bg-zinc-800');type=b.dataset.t;load()});
-document.getElementById('pin').addEventListener('keydown',e=>e.key==='Enter'&&doLogin());
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePlayer();hideUrl();document.getElementById('ctx').classList.add('hidden')}});
-</script>
-</body>
-</html>
+</script></body></html>
