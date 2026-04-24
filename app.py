@@ -270,9 +270,9 @@ def sw():
     js = "self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('fetch',e=>{});"
     return Response(js, mimetype='application/javascript')
 
-@app.get('/')
-def index():
-    return send_file('file-manager.html')
+@app.get('/favicon.ico')
+def favicon():
+    return Response(status=301, headers={'Location': 'https://archive.org/images/glogo.png'})
 
 @app.errorhandler(404)
 def not_found(e):
