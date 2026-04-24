@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IA Drive</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css"/>
+<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+<link rel="manifest" href="/manifest.json">
+<style>body{background:#000;color:#fff}.k-card{background:#111;border:1px solid #222}</style>
+</head>
+<body class="min-h-screen">
+<div id="login" class="h-screen flex items-center justify-center">
+  <div class="k-card p-8 rounded-2xl w-80">
+    <h1 class="text-2xl font-bold mb-6 text-center">IA Drive</h1>
+    <input id="pin" type="password" placeholder="PIN" class="w-full p-3 rounded bg-black border border-zinc-700 mb-4">
+    <button onclick="doLogin()" class="w-full bg-white text-black p-3 rounded font-semibold">Unlock</button>
+  </div>
+</div>
+
+<div id="app" class="hidden h-screen flex">
+  <aside class="w-56 k-card p-4 hidden md:block">
+    <h2 class="font-bold mb-4">IA Drive</h2>
+    <nav class="space-y-1 text-sm" id="filters">
+      <button data-t="all" class="w-full text-left p-2 rounded bg-zinc-800">All Files</button>
+      <button data-t="videos" class="w-full text-left p-2 rounded hover:bg-zinc-800">Videos</button>
+      <button data-t="audio" class="w-full text-left p-2 rounded hover:bg-zinc-800">Audio</button>
+      <button data-t="images" class="w-full text-left p-2 rounded hover:bg-zinc-800">Images</button>
+      <button data-t="documents" class="w-full text-left p-2 rounded hover:bg-zinc-800">Documents</button>
+    </nav>
+    <div class="mt-6">
+      <label class="text-xs text-zinc-500">Upload</label>
+      <input id="fileIn" type="file" multiple class="mt-2 text-xs w-full">
+    </div>
+  </aside>
+
+  <main class="flex-1 flex flex-col">
+    <header class="k-card p-3 flex items-center gap-2">
+      <input id="q" placeholder="Search" class="flex-1 bg-black border-zinc-800 rounded px-3 py-2 text-sm" oninput="load()">
+      <button onclick="toggleView()" class="px-3 py-2 k-card rounded text-sm">Grid/List</button>
+      <button onclick="uploadFiles()" class="px-3 py-2 bg-white text-black rounded text-sm font-semibold">Upload</button>
+    </header>
+
+    <div id="drop" class="flex-1 overflow-auto p-4" ondrop="handleDrop(event)" ondragover="event.preventDefault()">
+      <div id="crumbs" class="text-xs text-zinc-500 mb-3"></div>
+      <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"></div>
+      <div id="list" class="hidden divide-y divide-zinc-900"></div>
+    </div>
+
+    <div id="bulkBar" class="hidden k-card p-2 flex gap-2">
+      <button onclick="bulkDelete()" class="px-3 py-1 bg-red-600 rounded text-sm">Delete</button>
+      <span id="selCount" class="text-sm text-zinc-400"></span>
+    </div>
+  </main>
+</div>
+
+<div id="viewer" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" onclick="this.classList.add('hidden')">
+  <video id="player" class="max-w-[90vw] max-h-[90vh]" controls playsinline></video>
+  <img id="imgview" class="max-w-[90vw] max-h-[90vh] hidden">
+</div>
+
+<script>
+let view='grid', type='all', prefix='', selected=new Set(), files=[];
+async function api(p,o={}){const r=await fetch(p,{...o,credentials:'include'}); if(r.status===401){location.reload()} return r.json()}
+async function doLogin(){const pin=document.getElementById('pin').value; const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin}),credentials:'include'}); if(r.ok){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');load()} else alert('Wrong PIN')}
+async function load(){const q=document.getElementById('q').value; const d=await api(`/api/list?type=${type}&prefix=${prefix}&q=${encodeURIComponent(q)}`); files=d.files||[]; render()}
+function render(){const g=document.getElementById('grid'), l=document.getElementById('list'); g.innerHTML=''; l.innerHTML=''; files.forEach(f=>{const card=document.createElement('div'); card.className='k-card rounded-xl p-2 cursor-pointer relative'; card.innerHTML=`<input type="checkbox" class="absolute top-2 left-2 z-10" onchange="toggleSel('${f.key}',this.checked)"><div class="aspect-video bg-zinc-900 rounded overflow-hidden flex items-center justify-center">${f.type==='image'?`<img src="${f.thumb}" class="w-full h-full object-cover">`:f.type==='video'?`<img src="${f.thumb}" class="w-full h-full object-cover">`: `<span class="text-3xl">${icon(f.type)}</span>`}</div><div class="mt-2 text-xs truncate">${f.name}</div>`; card.oncontextmenu=e=>{e.preventDefault();menu(e,f)}; card.onclick=e=>{if(e.target.tagName!=='INPUT') openFile(f)}; g.appendChild(card); const row=document.createElement('div'); row.className='flex items-center gap-3 p-2 hover:bg-zinc-900'; row.innerHTML=`<input type="checkbox" onchange="toggleSel('${f.key}',this.checked)"><span class="flex-1 truncate text-sm">${f.name}</span><span class="text-xs text-zinc-500">${fmt(f.size)}</span>`; row.onclick=()=>openFile(f); l.appendChild(row)}); document.getElementById('grid').classList.toggle('hidden',view!=='grid'); document.getElementById('list').classList.toggle('hidden',view!=='list')}
+function icon(t){return t==='video'?'🎬':t==='audio'?'🎵':t==='image'?'🖼️':t==='document'?'📄':'📦'}
+function fmt(b){if(b<1024) return b+'B'; if(b<1e6) return (b/1024).toFixed(1)+'KB'; return (b/1e6).toFixed(1)+'MB'}
+function toggleView(){view=view==='grid'?'list':'grid'; render()}
+document.getElementById('filters').onclick=e=>{if(e.target.dataset.t){type=e.target.dataset.t; document.querySelectorAll('#filters button').forEach(b=>b.classList.remove('bg-zinc-800')); e.target.classList.add('bg-zinc-800'); load()}}
+function openFile(f){const v=document.getElementById('viewer'), p=document.getElementById('player'), i=document.getElementById('imgview'); v.classList.remove('hidden'); if(f.type==='video'||f.type==='audio'){i.classList.add('hidden');p.classList.remove('hidden');p.src=f.url;p.play()} else if(f.type==='image'){p.classList.add('hidden');i.classList.remove('hidden');i.src=f.url} else window.open(f.url,'_blank')}
+function menu(e,f){if(confirm(`Share ${f.name}?`)) share(f); }
+async function share(f){const r=await api('/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:f.key})}); navigator.clipboard.writeText(location.origin+r.url); alert('Link copied: '+r.url)}
+function toggleSel(k,c){c?selected.add(k):selected.delete(k); document.getElementById('bulkBar').classList.toggle('hidden',selected.size===0); document.getElementById('selCount').textContent=selected.size+' selected'}
+async function bulkDelete(){if(!confirm('Delete '+selected.size+' files?'))return; await api('/api/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',keys:[...selected]})}); selected.clear(); load()}
+async function uploadFiles(){const inp=document.getElementById('fileIn'); for(const f of inp.files){const fd=new FormData(); fd.append('file',f); fd.append('key',prefix?prefix+'/'+f.name:f.name); await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'})} load()}
+function handleDrop(e){e.preventDefault(); document.getElementById('fileIn').files=e.dataTransfer.files; uploadFiles()}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}
+</script>
+</body>
+</html>
