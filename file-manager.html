@@ -1,75 +1,366 @@
-<!DOCTYPE html><html class="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IA Drive</title><script src="https://cdn.tailwindcss.com"></script><script src="https://unpkg.com/lucide@latest"></script><style>body{background:#000;color:#fff;font-family:Inter} .k{background:#111;border:1px solid #222} .toast{position:fixed;bottom:20px;right:20px;padding:12px 16px;border-radius:8px;z-index:100} .success{background:#065f46} .error{background:#7f1d1d} .info{background:#111;border:1px solid #333}</style></head><body>
-<div id="login" class="h-screen flex items-center justify-center"><div class="k p-8 rounded-2xl w-80"><h1 class="text-2xl font-bold mb-6 text-center">IA Drive</h1><input id="pin" type="password" placeholder="PIN" class="w-full p-3 rounded bg-black border border-zinc-800 mb-3"><button onclick="doLogin()" class="w-full bg-white text-black p-3 rounded font-semibold">Unlock</button></div></div>
-<div id="app" class="hidden h-screen flex flex-col"><header class="k p-3 flex gap-2"><input id="q" placeholder="Search" class="flex-1 bg-black border border-zinc-800 rounded px-3 py-2"><button onclick="load()" class="p-2 k rounded"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button><button onclick="showUrl()" class="px-3 py-2 bg-white text-black rounded text-sm">URL Upload</button></header><div class="flex-1 overflow-auto p-4"><div id="grid" class="grid grid-cols-4 gap-3"></div></div></div>
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IA Drive</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+body { font-family: 'Inter', sans-serif; background: #000; color: #fff; }
+.k { background: #111; border: 1px solid #222; }
+.k2 { background: #0a0a0a; border: 1px solid #1a1a1a; }
+.btn { transition: all 0.2s; }
+.btn:hover { transform: translateY(-1px); }
+.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 18px; border-radius: 10px; z-index: 1000; animation: slide 0.3s; }
+@keyframes slide { from { transform: translateX(100%); opacity: 0; } }
+.success { background: #065f46; border: 1px solid #047857; }
+.error { background: #7f1d1d; border: 1px solid #991b1b; }
+.info { background: #111; border: 1px solid #333; }
+.grid-item { aspect-ratio: 1; }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+</head>
+<body class="overflow-hidden">
 
-<div id="urlmodal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center"><div class="k p-6 rounded-xl w-96"><h3 class="font-bold mb-4">Upload from URL</h3><input id="urlin" placeholder="https://" class="w-full p-2 bg-black border border-zinc-800 rounded mb-2"><input id="urlname" placeholder="filename (optional)" class="w-full p-2 bg-black border border-zinc-800 rounded mb-4"><div class="flex gap-2"><button onclick="doUrl()" class="flex-1 bg-white text-black py-2 rounded">Upload</button><button onclick="hideUrl()" class="flex-1 k py-2 rounded">Cancel</button></div><div id="urlstatus" class="text-xs text-zinc-500 mt-3"></div></div></div>
-<div id="toasts" class="fixed bottom-4 right-4 space-y-2"></div>
+<!-- Login -->
+<div id="login" class="h-screen flex items-center justify-center">
+  <div class="k p-8 rounded-2xl w-[360px]">
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <i data-lucide="hard-drive" class="w-8 h-8 text-black"></i>
+      </div>
+      <h1 class="text-2xl font-bold">IA Drive</h1>
+      <p class="text-zinc-500 text-sm mt-1">Private Internet Archive Cloud</p>
+    </div>
+    <input id="pin" type="password" placeholder="Enter PIN" class="w-full p-3 rounded-xl bg-black border border-zinc-800 mb-4 focus:outline-none focus:border-white">
+    <button onclick="doLogin()" class="w-full bg-white text-black p-3 rounded-xl font-semibold btn">Unlock</button>
+    <p class="text-xs text-zinc-600 text-center mt-4">Default PIN: 2580</p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" class="hidden h-screen flex flex-col">
+  <header class="k px-4 py-3 flex items-center gap-3">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+        <i data-lucide="hard-drive" class="w-4 h-4 text-black"></i>
+      </div>
+      <span class="font-semibold">IA Drive</span>
+    </div>
+    <div class="flex-1 max-w-xl mx-4 relative">
+      <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"></i>
+      <input id="q" placeholder="Search files..." class="w-full bg-black border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-zinc-600">
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="toggleView()" class="p-2 k2 rounded-lg btn" title="Toggle view">
+        <i data-lucide="grid" id="viewIcon" class="w-4 h-4"></i>
+      </button>
+      <button onclick="load()" class="p-2 k2 rounded-lg btn" title="Refresh">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+      </button>
+      <button onclick="showUrl()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm btn flex items-center gap-1.5">
+        <i data-lucide="link" class="w-4 h-4"></i> URL
+      </button>
+      <label class="px-3 py-2 bg-white text-black rounded-lg text-sm font-medium cursor-pointer btn flex items-center gap-1.5">
+        <i data-lucide="upload" class="w-4 h-4"></i> Upload
+        <input type="file" multiple class="hidden" onchange="uploadFiles(this.files)">
+      </label>
+    </div>
+  </header>
+
+  <div class="flex-1 overflow-hidden flex flex-col">
+    <div class="px-4 py-2 border-b border-zinc-900 flex items-center justify-between text-xs text-zinc-500">
+      <div id="stats">Loading...</div>
+      <div class="flex items-center gap-4">
+        <span id="storage">IA Storage</span>
+      </div>
+    </div>
+    <div class="flex-1 overflow-auto p-4" id="scrollArea">
+      <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3"></div>
+      <div id="list" class="hidden"></div>
+      <div id="empty" class="hidden h-full flex items-center justify-center">
+        <div class="text-center">
+          <i data-lucide="folder-open" class="w-16 h-16 text-zinc-800 mx-auto mb-3"></i>
+          <p class="text-zinc-600">No files yet</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Player Modal -->
+<div id="playerModal" class="hidden fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4">
+  <div class="w-full max-w-6xl">
+    <div class="flex justify-between items-center mb-4">
+      <h3 id="playerTitle" class="font-semibold truncate"></h3>
+      <button onclick="closePlayer()" class="p-2 hover:bg-zinc-900 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div class="bg-black rounded-xl overflow-hidden">
+      <video id="player" playsinline controls></video>
+      <audio id="audioPlayer" class="hidden w-full" controls></audio>
+    </div>
+  </div>
+</div>
+
+<!-- URL Modal -->
+<div id="urlModal" class="hidden fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-4">
+  <div class="k p-6 rounded-2xl w-full max-w-md">
+    <h3 class="font-bold text-lg mb-4">Upload from URL</h3>
+    <input id="urlin" placeholder="https://example.com/file.mp4" class="w-full p-3 bg-black border border-zinc-800 rounded-xl mb-3 focus:outline-none focus:border-zinc-600">
+    <input id="urlname" placeholder="filename (optional)" class="w-full p-3 bg-black border border-zinc-800 rounded-xl mb-4 focus:outline-none focus:border-zinc-600">
+    <div class="flex gap-2">
+      <button onclick="doUrl()" class="flex-1 bg-white text-black py-2.5 rounded-xl font-medium btn">Upload</button>
+      <button onclick="hideUrl()" class="flex-1 k2 py-2.5 rounded-xl btn">Cancel</button>
+    </div>
+    <p class="text-xs text-zinc-600 mt-3">>1GB files stream directly to IA</p>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="ctx" class="hidden fixed k2 rounded-xl shadow-2xl py-1 z-50 min-w-[180px]">
+  <button onclick="ctxAction('open')" class="w-full px-3 py-2 text-left hover:bg-zinc-800 text-sm flex items-center gap-2"><i data-lucide="play" class="w-4 h-4"></i>Open</button>
+  <button onclick="ctxAction('copy')" class="w-full px-3 py-2 text-left hover:bg-zinc-800 text-sm flex items-center gap-2"><i data-lucide="link" class="w-4 h-4"></i>Copy Link</button>
+  <button onclick="ctxAction('direct')" class="w-full px-3 py-2 text-left hover:bg-zinc-800 text-sm flex items-center gap-2"><i data-lucide="download" class="w-4 h-4"></i>Direct DL</button>
+  <hr class="border-zinc-800 my-1">
+  <button onclick="ctxAction('delete')" class="w-full px-3 py-2 text-left hover:bg-red-950 text-red-400 text-sm flex items-center gap-2"><i data-lucide="trash" class="w-4 h-4"></i>Delete</button>
+</div>
+
+<div id="toasts"></div>
 
 <script>
-lucide.createIcons(); let files=[];
-function toast(m,k='info'){const t=document.createElement('div');t.className='toast '+k;t.textContent=m;toasts.appendChild(t);setTimeout(()=>t.remove(),4000)}
-async function api(p,o){const r=await fetch(p,{...o,credentials:'include',headers:{'Content-Type':'application/json',...o?.headers}});if(!r.ok)throw new Error((await r.json()).error);return r.json()}
-async function doLogin(){await api('/api/login',{method:'POST',body:JSON.stringify({pin:pin.value})});login.classList.add('hidden');app.classList.remove('hidden');load()}
-async function load(){const d=await api('/api/list');files=d.files;grid.innerHTML=files.map(f=>`<div class="k p-3 rounded"><div class="text-sm truncate">${f.name}</div><div class="text-xs text-zinc-600">${(f.size/1024/1024).toFixed(1)} MB</div></div>`).join('')}
-function showUrl(){urlmodal.classList.remove('hidden')} function hideUrl(){urlmodal.classList.add('hidden')}
+lucide.createIcons();
+let files = [], view = 'grid', ctxFile = null, player = null;
 
-async function doUrl(){
-  const url = urlin.value.trim(); const name = urlname.value || url.split('/').pop().split('?')[0];
-  hideUrl(); urlstatus.textContent='';
+function toast(m, k='info') {
+  const t = document.createElement('div');
+  t.className = `toast ${k}`;
+  t.innerHTML = `<div class="flex items-center gap-2"><span>${m}</span></div>`;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function api(p, o={}) {
+  const r = await fetch(p, {...o, credentials: 'include', headers: {'Content-Type':'application/json', ...o.headers}});
+  if (!r.ok) throw new Error((await r.json()).error || 'Error');
+  return r.json();
+}
+
+async function doLogin() {
+  try {
+    await api('/api/login', {method:'POST', body: JSON.stringify({pin: document.getElementById('pin').value})});
+    document.getElementById('login').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    load();
+  } catch(e) { toast('Invalid PIN', 'error'); }
+}
+
+function fmt(s) {
+  if (s < 1024) return s+' B';
+  if (s < 1024**2) return (s/1024).toFixed(1)+' KB';
+  if (s < 1024**3) return (s/1024**2).toFixed(1)+' MB';
+  return (s/1024**3).toFixed(2)+' GB';
+}
+
+function icon(t) {
+  const m = {video:'film', audio:'music', image:'image', document:'file-text'};
+  return m[t] || 'file';
+}
+
+async function load() {
+  try {
+    const d = await api('/api/list');
+    files = d.files.sort((a,b) => b.size - a.size);
+    render();
+    document.getElementById('stats').textContent = `${files.length} files • ${fmt(files.reduce((a,f)=>a+f.size,0))}`;
+  } catch(e) { toast('Load failed', 'error'); }
+}
+
+function render() {
+  const q = document.getElementById('q').value.toLowerCase();
+  const filtered = files.filter(f => f.name.toLowerCase().includes(q));
+  
+  document.getElementById('empty').classList.toggle('hidden', filtered.length > 0);
+  
+  if (view === 'grid') {
+    document.getElementById('grid').classList.remove('hidden');
+    document.getElementById('list').classList.add('hidden');
+    document.getElementById('grid').innerHTML = filtered.map(f => `
+      <div class="k2 rounded-xl p-3 hover:border-zinc-700 cursor-pointer group grid-item flex flex-col" 
+           onclick="openFile('${f.key}')" oncontextmenu="showCtx(event,'${f.key}')">
+        <div class="flex-1 flex items-center justify-center mb-2">
+          <div class="w-12 h-12 rounded-lg bg-zinc-900 flex items-center justify-center group-hover:bg-zinc-800">
+            <i data-lucide="${icon(f.type)}" class="w-6 h-6 text-zinc-600"></i>
+          </div>
+        </div>
+        <div class="text-xs truncate" title="${f.name}">${f.name}</div>
+        <div class="text-[10px] text-zinc-600 mt-1">${fmt(f.size)}</div>
+      </div>
+    `).join('');
+  } else {
+    document.getElementById('grid').classList.add('hidden');
+    document.getElementById('list').classList.remove('hidden');
+    document.getElementById('list').innerHTML = `
+      <div class="k2 rounded-xl overflow-hidden">
+        <div class="grid grid-cols-12 gap-4 px-4 py-2 text-xs text-zinc-600 border-b border-zinc-800">
+          <div class="col-span-6">Name</div><div class="col-span-2">Size</div><div class="col-span-2">Type</div><div class="col-span-2"></div>
+        </div>
+        ${filtered.map(f => `
+          <div class="grid grid-cols-12 gap-4 px-4 py-3 hover:bg-zinc-950 border-b border-zinc-900 cursor-pointer"
+               onclick="openFile('${f.key}')" oncontextmenu="showCtx(event,'${f.key}')">
+            <div class="col-span-6 flex items-center gap-2 truncate"><i data-lucide="${icon(f.type)}" class="w-4 h-4 text-zinc-600"></i><span class="text-sm truncate">${f.name}</span></div>
+            <div class="col-span-2 text-xs text-zinc-500">${fmt(f.size)}</div>
+            <div class="col-span-2 text-xs text-zinc-600">${f.type}</div>
+            <div class="col-span-2 text-right"></div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+  lucide.createIcons();
+}
+
+function toggleView() {
+  view = view === 'grid' ? 'list' : 'grid';
+  document.getElementById('viewIcon').setAttribute('data-lucide', view === 'grid' ? 'grid' : 'list');
+  lucide.createIcons();
+  render();
+}
+
+function openFile(key) {
+  const f = files.find(x => x.key === key);
+  if (!f) return;
+  
+  if (f.type === 'video' || f.type === 'audio') {
+    document.getElementById('playerModal').classList.remove('hidden');
+    document.getElementById('playerTitle').textContent = f.name;
+    const v = document.getElementById('player');
+    const a = document.getElementById('audioPlayer');
+    if (f.type === 'video') {
+      v.classList.remove('hidden'); a.classList.add('hidden');
+      v.src = f.url; if (!player) player = new Plyr(v); else player.source = {type:'video', sources:[{src:f.url}]};
+    } else {
+      v.classList.add('hidden'); a.classList.remove('hidden'); a.src = f.url;
+    }
+  } else if (f.type === 'image') {
+    window.open(f.url, '_blank');
+  } else {
+    window.open(f.direct, '_blank');
+  }
+}
+
+function closePlayer() {
+  document.getElementById('playerModal').classList.add('hidden');
+  if (player) player.pause();
+}
+
+function showCtx(e, key) {
+  e.preventDefault();
+  ctxFile = files.find(x => x.key === key);
+  const m = document.getElementById('ctx');
+  m.style.left = e.pageX + 'px'; m.style.top = e.pageY + 'px';
+  m.classList.remove('hidden');
+}
+
+function ctxAction(a) {
+  document.getElementById('ctx').classList.add('hidden');
+  if (!ctxFile) return;
+  if (a === 'open') openFile(ctxFile.key);
+  if (a === 'copy') { navigator.clipboard.writeText(ctxFile.url); toast('Link copied'); }
+  if (a === 'direct') { navigator.clipboard.writeText(ctxFile.direct); toast('Direct link copied'); }
+  if (a === 'delete') if (confirm('Delete '+ctxFile.name+'?')) { toast('Delete not implemented in demo'); }
+}
+
+document.addEventListener('click', () => document.getElementById('ctx').classList.add('hidden'));
+document.getElementById('q').addEventListener('input', render);
+
+async function uploadFiles(list) {
+  for (const file of list) {
+    try {
+      if (file.size > 100*1024*1024) {
+        // Large file - multipart
+        toast(`Uploading large file: ${file.name}`, 'info');
+        const init = await api('/api/multipart/init', {method:'POST', body:JSON.stringify({key:file.name})});
+        const chunkSize = 100*1024*1024;
+        const parts = Math.ceil(file.size / chunkSize);
+        const uploaded = [];
+        for (let i=0; i<parts; i++) {
+          const chunk = file.slice(i*chunkSize, (i+1)*chunkSize);
+          const {url} = await api('/api/multipart/part', {method:'POST', body:JSON.stringify({key:file.name, uploadId:init.uploadId, part:i+1})});
+          const res = await fetch(url, {method:'PUT', body:chunk});
+          uploaded.push({ETag: res.headers.get('ETag'), PartNumber:i+1});
+          toast(`${file.name}: ${Math.round((i+1)/parts*100)}%`, 'info');
+        }
+        await api('/api/multipart/complete', {method:'POST', body:JSON.stringify({key:file.name, uploadId:init.uploadId, parts:uploaded})});
+      } else {
+        // Small file - direct
+        const fd = new FormData(); fd.append('file', file); fd.append('key', file.name);
+        await fetch('/api/upload', {method:'POST', body:fd, credentials:'include'});
+      }
+      toast('✓ '+file.name, 'success');
+    } catch(e) { toast('Upload failed: '+file.name, 'error'); }
+  }
+  load();
+}
+
+function showUrl() { document.getElementById('urlModal').classList.remove('hidden'); }
+function hideUrl() { document.getElementById('urlModal').classList.add('hidden'); }
+
+async function doUrl() {
+  const url = document.getElementById('urlin').value.trim();
+  const name = document.getElementById('urlname').value || url.split('/').pop().split('?')[0];
+  hideUrl();
   
   try {
-    // 1. Check size
-    const head = await fetch(url, {method:'HEAD', mode:'cors'}).catch(()=>null);
+    // Check size
     let size = 0;
-    if(head && head.ok) size = parseInt(head.headers.get('content-length')||'0');
+    try {
+      const head = await fetch(url, {method:'HEAD', mode:'cors'});
+      if (head.ok) size = parseInt(head.headers.get('content-length') || '0');
+    } catch {}
     
-    if(size > 0 && size < 1024*1024*1024) {
-      // <1GB: use server-side (VPS downloads)
-      toast(`Server downloading ${(size/1024/1024).toFixed(0)}MB...`, 'info');
-      await api('/api/url-upload',{method:'POST',body:JSON.stringify({url,key:name})});
+    if (size > 0 && size < 1024*1024*1024) {
+      // <1GB use server
+      toast(`Server downloading ${fmt(size)}...`, 'info');
+      await api('/api/url-upload', {method:'POST', body:JSON.stringify({url, key:name})});
       toast('✓ Upload complete', 'success');
     } else {
-      // >1GB or unknown size: browser streams direct to IA
-      toast(`Large file detected - streaming direct to IA`, 'info');
-      
-      // Get size via range request if HEAD failed
-      if(!size){
-        const test = await fetch(url, {headers:{Range:'bytes=0-0'}});
-        const cr = test.headers.get('content-range');
-        if(cr) size = parseInt(cr.split('/')[1]);
+      // >1GB - stream via browser
+      toast('Large file - streaming direct to IA', 'info');
+      if (!size) {
+        const r = await fetch(url, {headers:{Range:'bytes=0-0'}});
+        const cr = r.headers.get('content-range');
+        size = cr ? parseInt(cr.split('/')[1]) : 0;
       }
-      
-      const chunkSize = 100*1024*1024; // 100MB
+      const chunkSize = 100*1024*1024;
       const parts = Math.ceil(size / chunkSize);
-      
-      // Init multipart
-      const init = await api('/api/multipart/init',{method:'POST',body:JSON.stringify({key:name})});
+      const init = await api('/api/multipart/init', {method:'POST', body:JSON.stringify({key:name})});
       const uploaded = [];
       
-      for(let i=0; i<parts; i++){
+      for (let i=0; i<parts; i++) {
         const start = i*chunkSize;
-        const end = Math.min(start+chunkSize-1, size-1);
-        
-        // Fetch chunk from source
+        const end = Math.min(start + chunkSize - 1, size - 1);
         const chunkRes = await fetch(url, {headers:{Range:`bytes=${start}-${end}`}});
         const chunk = await chunkRes.arrayBuffer();
-        
-        // Get presigned URL
-        const {url:putUrl} = await api('/api/multipart/part',{method:'POST',body:JSON.stringify({key:name,uploadId:init.uploadId,part:i+1})});
-        
-        // Upload to IA directly
+        const {url: putUrl} = await api('/api/multipart/part', {method:'POST', body:JSON.stringify({key:name, uploadId:init.uploadId, part:i+1})});
         const put = await fetch(putUrl, {method:'PUT', body:chunk});
         uploaded.push({ETag: put.headers.get('ETag'), PartNumber:i+1});
-        
-        toast(`Uploading ${name}: ${Math.round((i+1)/parts*100)}%`, 'info');
+        toast(`${name}: ${Math.round((i+1)/parts*100)}%`, 'info');
       }
-      
-      await api('/api/multipart/complete',{method:'POST',body:JSON.stringify({key:name,uploadId:init.uploadId,parts:uploaded})});
+      await api('/api/multipart/complete', {method:'POST', body:JSON.stringify({key:name, uploadId:init.uploadId, parts:uploaded})});
       toast('✓ Large upload complete', 'success');
     }
     load();
-  } catch(e){
-    toast('Upload failed: '+e.message, 'error');
+  } catch(e) {
+    toast('URL upload failed: '+e.message, 'error');
   }
 }
-</script></body></html>
+
+// Init
+document.getElementById('pin').addEventListener('keypress', e => e.key === 'Enter' && doLogin());
+</script>
+</body>
+</html>
