@@ -12,7 +12,7 @@ services:
       - IA_BUCKET=junk-manage-caution
       - IA_ACCESS_KEY=${IA_ACCESS_KEY}
       - IA_SECRET_KEY=${IA_SECRET_KEY}
-      - WORKER_MEDIA_BASE=https://your-worker.workers.dev
+      - WORKER_MEDIA_BASE=https://ia-drive.visdrive.workers.dev
     restart: unless-stopped
     env_file:
       - .env
