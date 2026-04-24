@@ -1,6 +1,6 @@
 import os, io, time, json, requests, logging
 from datetime import datetime
-from flask import Flask, request, session, jsonify, Response, send_file, abort
+from flask import Flask, request, session, jsonify, Response, send_file, abort, redirect
 from functools import wraps
 import internetarchive as ia
 
@@ -25,24 +25,28 @@ DOC_EXT = {'pdf','doc','docx','txt','md','epub','ppt','pptx','xls','xlsx','csv'}
 def block_scanners():
     path = request.path
     ip = request.remote_addr
-    
+
     # Block common exploits
-    blocked = ['setup.cgi', 'netgear', 'Mozi.m', '.env', 'wp-login', 'phpmyadmin', 'shell', 'cmd=']
+    blocked = ['setup.cgi', 'netgear', 'Mozi.m', '.env', 'wp-login', 'phpmyadmin', 'shell', 'cmd=', 'boaform']
     if any(b in path.lower() for b in blocked):
         logger.warning(f"Blocked exploit probe from {ip}: {path}")
         abort(404)
-    
+
     # Block AI/scanner endpoints unless authenticated
     scanner_paths = ['/v1/', '/api/tags', '/api/generate', '/api/version', '/api/models',
-                     '/.well-known/', '/metrics', '/health', '/docs', '/openapi']
-    if any(path.startswith(p) for p in scanner_paths) and path != '/health':
+                     '/.well-known/', '/metrics', '/docs', '/openapi', '/predict', '/embed']
+    if any(path.startswith(p) for p in scanner_paths) and path not in ['/health', '/favicon.ico']:
         if not session.get('auth'):
             abort(404)
-    
+
     # Detect TLS handshake on HTTP port
-    if request.method == 'PRI' or (request.data and len(request.data) > 0 and request.data[0] == 0x16):
-        logger.warning(f"TLS probe from {ip}")
-        abort(400)
+    if request.method == 'PRI' or (request.content_length and request.content_length > 0):
+        try:
+            if request.data and len(request.data) > 0 and request.data[0] == 0x16:
+                logger.warning(f"TLS probe from {ip}")
+                abort(400)
+        except:
+            pass
 
 def login_required(f):
     @wraps(f)
@@ -77,6 +81,10 @@ def is_system_file(name):
 def health():
     return jsonify({'status':'ok', 'bucket': BUCKET, 'time': datetime.utcnow().isoformat()}), 200
 
+@app.get('/favicon.ico')
+def favicon():
+    return redirect('https://archive.org/images/glogo.png', code=301)
+
 @app.post('/api/login')
 def login():
     pin = (request.json or {}).get('pin','')
@@ -105,9 +113,9 @@ def list_files():
             if q and q not in name.lower(): continue
 
             t = file_type(name)
-            if ftype != 'all':
+            if ftype!= 'all':
                 mapping = {'videos':'video','audio':'audio','images':'image','documents':'document'}
-                if mapping.get(ftype) != t: continue
+                if mapping.get(ftype)!= t: continue
 
             size = int(f.get('size',0))
             mtime = f.get('mtime') or f.get('last-modified','')
@@ -137,20 +145,20 @@ def list_files():
 def upload():
     if 'file' not in request.files:
         return jsonify({'error':'no file'}), 400
-    
+
     f = request.files['file']
     key = request.form.get('key') or f.filename
     key = key.replace('..','').lstrip('/')
-    
+
     if not IA_ACCESS or not IA_SECRET:
         return jsonify({'error':'IA credentials not configured'}), 500
-    
+
     tmp = f'/tmp/{int(time.time())}_{os.path.basename(key)}'
     try:
         f.save(tmp)
         item = get_item()
         item.upload(tmp, key=key, access_key=IA_ACCESS, secret_key=IA_SECRET,
-                    verbose=False, retries=3, 
+                    verbose=False, retries=3,
                     metadata={'x-archive-keep-old-version':'0'})
         logger.info(f"Upload success: {key} ({os.path.getsize(tmp)} bytes)")
         return jsonify({'ok': True, 'key': key})
@@ -168,27 +176,27 @@ def url_upload():
     url = data.get('url','').strip()
     key = data.get('key') or url.split('/')[-1].split('?')[0][:100]
     key = key.replace('..','').lstrip('/')
-    
+
     if not url or not url.startswith(('http://','https://')):
         return jsonify({'error':'invalid url'}), 400
-    
+
     if not IA_ACCESS or not IA_SECRET:
         logger.error("URL upload attempted without IA credentials")
         return jsonify({'error':'IA credentials not configured - set IA_ACCESS_KEY and IA_SECRET_KEY'}), 500
-    
+
     try:
         import tempfile
         logger.info(f"URL upload start: {url} -> {key}")
-        
-        with requests.get(url, stream=True, timeout=600, 
+
+        with requests.get(url, stream=True, timeout=600,
                          headers={'User-Agent':'IA-Drive/1.0'},
                          allow_redirects=True) as r:
             r.raise_for_status()
-            
+
             total = int(r.headers.get('content-length', 0))
             if total > 100 * 1024**3:
                 return jsonify({'error':'file too large (>100GB)'}), 413
-            
+
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.download')
             try:
                 downloaded = 0
@@ -197,18 +205,18 @@ def url_upload():
                         tmp.write(chunk)
                         downloaded += len(chunk)
                 tmp.close()
-                
+
                 logger.info(f"Downloaded {downloaded} bytes, uploading to IA...")
                 item = get_item()
-                item.upload(tmp.name, key=key, access_key=IA_ACCESS, 
+                item.upload(tmp.name, key=key, access_key=IA_ACCESS,
                            secret_key=IA_SECRET, verbose=False, retries=2)
-                
+
                 logger.info(f"URL upload success: {key}")
                 return jsonify({'ok': True, 'key': key, 'size': downloaded})
             finally:
                 if os.path.exists(tmp.name):
                     os.unlink(tmp.name)
-                    
+
     except requests.exceptions.RequestException as e:
         logger.error(f"URL fetch failed: {e}")
         return jsonify({'error': f'download failed: {str(e)}'}), 502
@@ -233,7 +241,7 @@ def delete():
 @login_required
 def bulk():
     data = request.json or {}
-    if data.get('action') != 'delete': 
+    if data.get('action')!= 'delete':
         return jsonify({'error':'unsupported'}),400
     keys = data.get('keys',[])
     try:
@@ -270,12 +278,27 @@ def sw():
     js = "self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('fetch',e=>{});"
     return Response(js, mimetype='application/javascript')
 
-@app.get('/favicon.ico')
-def favicon():
-    return Response(status=301, headers={'Location': 'https://archive.org/images/glogo.png'})
+@app.get('/')
+def index():
+    # Try to serve file-manager.html, fallback to error page
+    html_path = 'file-manager.html'
+    if os.path.exists(html_path):
+        return send_file(html_path)
+    else:
+        logger.warning("file-manager.html not found, serving fallback")
+        return """<!DOCTYPE html><html><head><title>IA Drive</title>
+        <style>body{background:#000;color:#fff;font-family:system-ui;padding:40px;text-align:center}
+        h1{font-size:48px;margin:40px 0}code{background:#111;padding:4px 8px;border-radius:4px}</style>
+        </head><body><h1>📁 IA Drive</h1>
+        <p>Backend is running, but <code>file-manager.html</code> is missing.</p>
+        <p>Copy the HTML file to <code>/app/file-manager.html</code> and refresh.</p>
+        <p>API is available at <code>/api/list</code></p></body></html>""", 200
 
 @app.errorhandler(404)
 def not_found(e):
+    # Don't log scanner 404s
+    if not any(x in request.path for x in ['.env','wp-','setup','php']):
+        logger.info(f"404: {request.path}")
     return jsonify({'error':'not found'}), 404
 
 @app.errorhandler(500)
