@@ -1,27 +1,28 @@
-IA Drive with WebDAV
-==================
+# IA Drive - LOW Auth Edition
 
-Features:
-- Web UI on port 8080 (upload, browse, stream)
-- WebDAV on port 8081 (mount as network drive)
-- Multipart uploads for 15GB+ files
-- Auto-detect URL size
+Fixed version that uses Internet Archive's documented LOW authorization instead of boto3.
 
-Setup:
-1. Set env vars in .env:
-   IA_ACCESS_KEY=xxx
-   IA_SECRET_KEY=yyy
+## Problem we solved
+- boto3 AWS4 signing → InvalidAccessKeyId on new IA accounts
+- curl with `Authorization: LOW key:secret` → 200 OK
+- This app uses direct PUT with LOW auth
 
-2. Build:
-   docker compose up -d --build
+## Features
+- x-amz-auto-make-bucket:1 (auto creates item)
+- x-archive-queue-derive:0 (instant, no OCR)
+- x-archive-interactive-priority:1
+- PIN login (default 2383)
+- Lists files via archive.org/metadata API
 
-3. Web UI: http://your-ip:8080 (PIN: 2580)
-4. WebDAV: 
-   Windows: Map network drive to http://your-ip:8081
-   User: ia / Pass: 2580
-   macOS: Finder > Connect > http://your-ip:8081
+## Deploy to Portainer
+1. Stacks → Add stack → Upload docker-compose.yml
+2. Or build from GitHub: point to repo containing these files
+3. Set env vars, deploy
 
-Upload limits:
-- Web UI: unlimited via multipart
-- WebDAV: unlimited (rclone handles chunking)
-- URL uploads: auto-switches to direct for >1GB
+## Deploy locally
+docker compose up -d --build
+
+Access http://localhost:8080
+
+## Security
+Rotate keys after testing - they were posted publicly in chat.
