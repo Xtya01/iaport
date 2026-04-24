@@ -1,27 +1,18 @@
-version: '3.9'
-
+version: '3.8'
 services:
   ia-drive:
-    # Option 1: Build directly from GitHub (Portainer Stack Editor supports this)
-    build:
-      context: https://github.com/your-username/ia-drive.git#main
-      dockerfile: Dockerfile
-    # Option 2: Use prebuilt image (comment out build above, uncomment below)
-    # image: ghcr.io/your-username/ia-drive:latest
-    
+    build: .
     container_name: ia-drive
     ports:
-      - "8080:8080"
+      - "8080:8080"  # Web UI
+      - "8081:8081"  # WebDAV
     environment:
-      - IA_BUCKET=${IA_BUCKET:-junk-manage-caution}
+      - FLASK_SECRET=change-this-to-random-string
+      - LOGIN_PIN=2580
+      - IA_BUCKET=junk-manage-caution
       - IA_ACCESS_KEY=${IA_ACCESS_KEY}
       - IA_SECRET_KEY=${IA_SECRET_KEY}
-      - WORKER_MEDIA_BASE=${WORKER_MEDIA_BASE:-https://your-worker.workers.dev}
-      - LOGIN_PIN=${LOGIN_PIN:-2580}
-      - FLASK_SECRET=${FLASK_SECRET:-change-me-in-prod}
+      - WORKER_MEDIA_BASE=https://your-worker.workers.dev
     restart: unless-stopped
     volumes:
-      - ia_drive_tmp:/tmp
-
-volumes:
-  ia_drive_tmp:
+      - ./data:/tmp/ia-cache

@@ -1,24 +1,27 @@
-# IA Drive — Private Internet Archive File Manager
+IA Drive with WebDAV
+==================
 
-Google Drive clone using Internet Archive for unlimited storage + Cloudflare for CDN.
+Features:
+- Web UI on port 8080 (upload, browse, stream)
+- WebDAV on port 8081 (mount as network drive)
+- Multipart uploads for 15GB+ files
+- Auto-detect URL size
 
-## Files
-- app.py — Flask backend (port 8080)
-- worker.js — Cloudflare Worker
-- file-manager.html — frontend (Tailwind + Konsta UI style + Plyr)
-- Dockerfile + requirements.txt
-- wrangler.toml — Worker config
-
-## Setup
-1. Set env vars:
-   IA_BUCKET=junk-manage-caution
+Setup:
+1. Set env vars in .env:
    IA_ACCESS_KEY=xxx
-   IA_SECRET_KEY=xxx
-   WORKER_MEDIA_BASE=https://your-worker.workers.dev
-   LOGIN_PIN=2580
-   FLASK_SECRET=random-string
+   IA_SECRET_KEY=yyy
 
-2. Deploy Worker: wrangler deploy
-3. Build Docker: docker build -t ia-drive . && docker run -p 8080:8080 --env-file .env ia-drive
+2. Build:
+   docker compose up -d --build
 
-Default PIN: 2580
+3. Web UI: http://your-ip:8080 (PIN: 2580)
+4. WebDAV: 
+   Windows: Map network drive to http://your-ip:8081
+   User: ia / Pass: 2580
+   macOS: Finder > Connect > http://your-ip:8081
+
+Upload limits:
+- Web UI: unlimited via multipart
+- WebDAV: unlimited (rclone handles chunking)
+- URL uploads: auto-switches to direct for >1GB
