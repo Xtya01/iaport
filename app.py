@@ -1,7 +1,6 @@
-import os, requests, json
+import os, requests
 from flask import Flask, request, session, redirect, jsonify
 from werkzeug.utils import secure_filename
-from datetime import datetime
 
 IA_BUCKET = os.getenv("IA_BUCKET")
 IA_ACCESS = os.getenv("IA_ACCESS_KEY")
@@ -44,46 +43,46 @@ def ia_list():
             files.append({
                 "name": name,
                 "size": int(f.get("size",0)),
-                "mtime": f.get("mtime"),
-                "url": f"{WORKER}/{IA_BUCKET}/{name}" if WORKER else f"https://archive.org/download/{IA_BUCKET}/{name}",
-                "ia_url": f"https://archive.org/download/{IA_BUCKET}/{name}"
+                "url": f"{WORKER}/{IA_BUCKET}/{name}" if WORKER else f"https://archive.org/download/{IA_BUCKET}/{name}"
             })
         return sorted(files, key=lambda x: x["name"].lower())
-    except: return []
+    except:
+        return []
 
 @app.before_request
 def auth():
-    if request.path.startswith(("/login","/static","/health")): return
+    if request.path.startswith(("/login","/health")): return
     if not session.get("ok"): return redirect("/login")
 
-@app.get("/health"):
-def health(): return "ok"
+@app.route("/health", methods=["GET"])
+def health():
+    return "ok"
 
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method=="POST" and request.form.get("pin")==LOGIN_PIN:
-        session["ok"]=True; return redirect("/")
+        session["ok"]=True
+        return redirect("/")
     return '''<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>IA Drive</title>
 <style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0b1220;color:#fff;font-family:system-ui}
-.card{background:#111827;padding:36px;border-radius:16px;width:320px;box-shadow:0 20px 60px #0008}
+.card{background:#111827;padding:36px;border-radius:16px;width:320px}
 input{width:100%;padding:12px;background:#0b1220;border:1px solid #334155;border-radius:10px;color:#fff;box-sizing:border-box}
 button{width:100%;margin-top:14px;padding:12px;background:#3b82f6;border:0;border-radius:10px;color:#fff;font-weight:600;cursor:pointer}
-</style></head><body><div class=card><h2 style="margin:0 0 16px">IA Drive</h2>
+</style></head><body><div class=card><h2>IA Drive</h2>
 <form method=post><input name=pin type=password placeholder="Enter PIN" autofocus><button>Unlock</button></form></div></body></html>'''
 
-@app.get("/")
+@app.route("/")
 def home():
     return '''<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>IA Drive</title><style>
 :root{--bg:#0b1220;--card:#111827;--muted:#9ca3af;--acc:#3b82f6}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e5e7eb;font-family:system-ui}
+body{margin:0;background:var(--bg);color:#e5e7eb;font-family:system-ui}
 .wrap{max-width:1100px;margin:32px auto;padding:0 16px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .card{background:var(--card);padding:18px;border-radius:14px;margin-bottom:16px}
-.drop{border:2px dashed #334155;border-radius:12px;padding:28px;text-align:center;transition:.2s;cursor:pointer}
+.drop{border:2px dashed #334155;border-radius:12px;padding:28px;text-align:center;cursor:pointer}
 .drop.drag{background:#0b1220;border-color:var(--acc)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-.item{background:#0b1220;border:1px solid #1f2937;border-radius:12px;padding:12px;position:relative}
+.item{background:#0b1220;border:1px solid #1f2937;border-radius:12px;padding:12px}
 .item img,.item video{width:100%;height:140px;object-fit:cover;border-radius:8px;background:#000}
 .name{font-size:14px;margin:8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta{font-size:12px;color:var(--muted)}
@@ -94,66 +93,56 @@ def home():
 .bar{height:100%;width:0;background:var(--acc);transition:width.1s}
 .search{padding:10px 12px;width:260px;background:#0b1220;border:1px solid #334155;border-radius:10px;color:#fff}
 </style></head><body><div class=wrap>
-<div class=header><h1 style="margin:0">IA Drive</h1><input id=q class=search placeholder="Search files…"></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+<h1 style="margin:0">IA Drive</h1><input id=q class=search placeholder="Search files…"></div>
 
 <div class=card>
-<div id=drop class=drop><b>Drop files here</b> or click to select<br><span style="color:var(--muted);font-size:13px">Uploads to Internet Archive via LOW auth</span>
-<input id=file type=file multiple style="display:none"></div>
+<div id=drop class=drop><b>Drop files here</b> or click to select</div>
+<input id=file type=file multiple style="display:none">
 <div class=progress id=prog><div class=bar id=bar></div></div>
 <div id=status style="margin-top:8px;color:var(--muted);font-size:13px"></div>
 </div>
 
-<div class=card><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-<h3 style="margin:0">Files</h3><span id=count style="color:var(--muted)"></span></div>
+<div class=card><h3 style="margin:0 0 10px">Files <span id=count style="color:var(--muted)"></span></h3>
 <div id=grid class=grid></div></div></div>
 
 <script>
 const drop=document.getElementById('drop'), fileIn=document.getElementById('file'), prog=document.getElementById('prog'), bar=document.getElementById('bar'), status=document.getElementById('status'), grid=document.getElementById('grid'), q=document.getElementById('q');
 let files=[];
-
 async function load(){ const r=await fetch('/api/list'); files=await r.json(); render(); }
 function render(){ const term=q.value.toLowerCase(); const list=files.filter(f=>f.name.toLowerCase().includes(term));
-document.getElementById('count').textContent=list.length+' items'; grid.innerHTML='';
-list.forEach(f=>{ const isImg=/\.(png|jpe?g|gif|webp|svg)$/i.test(f.name); const isVid=/\.(mp4|webm|mov)$/i.test(f.name);
-const thumb=isImg?`<img src="${f.url}" loading=lazy>`:isVid?`<video src="${f.url}" muted></video>`:`<div style="height:140px;display:grid;place-items:center;background:#000;border-radius:8px;font-size:40px">📄</div>`;
+document.getElementById('count').textContent='('+list.length+')'; grid.innerHTML='';
+list.forEach(f=>{ const isImg=/\.(png|jpe?g|gif|webp)$/i.test(f.name); const isVid=/\.(mp4|webm|mov)$/i.test(f.name);
+const thumb=isImg?`<img src="${f.url}" loading=lazy>`:isVid?`<video src="${f.url}" muted></video>`:`<div style="height:140px;display:grid;place-items:center;background:#000;border-radius:8px">📄</div>`;
 grid.innerHTML+=`<div class=item>${thumb}<div class=name title="${f.name}">${f.name}</div>
 <div class=meta>${(f.size/1024/1024).toFixed(2)} MB</div>
-<div class=actions><a class=btn href="${f.url}" target=_blank>Open</a><button class=btn onclick="copy('${f.url}')">Copy</button>
+<div class=actions><a class=btn href="${f.url}" target=_blank>Open</a><button class=btn onclick="navigator.clipboard.writeText('${f.url}')">Copy</button>
 <button class="btn danger" onclick="del('${f.name}')">Delete</button></div></div>`; }); }
-
 async function upload(file){ const fd=new FormData(); fd.append('file',file);
 return new Promise((res,rej)=>{ const xhr=new XMLHttpRequest(); xhr.open('POST','/api/upload');
-xhr.upload.onprogress=e=>{ if(e.lengthComputable){ bar.style.width=(e.loaded/e.total*100)+'%'; } };
-xhr.onload=()=>xhr.status===200?res():rej(xhr.response); xhr.onerror=()=>rej(); xhr.send(fd); });
-}
-
-async function handleFiles(list){ prog.style.display='block'; bar.style.width='0%'; status.textContent='';
-for(let i=0;i<list.length;i++){ status.textContent=`Uploading ${i+1}/${list.length}: ${list[i].name}`; await upload(list[i]); }
-status.textContent='Done'; setTimeout(()=>prog.style.display='none',800); load(); }
-
-drop.onclick=()=>fileIn.click(); drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag')};
-drop.ondragleave=()=>drop.classList.remove('drag'); drop.ondrop=e=>{e.preventDefault();drop.classList.remove('drag');handleFiles(e.dataTransfer.files)};
-fileIn.onchange=()=>handleFiles(fileIn.files); q.oninput=render;
-
-async function del(name){ if(!confirm('Delete '+name+'?'))return; await fetch('/api/delete?name='+encodeURIComponent(name),{method:'DELETE'}); load(); }
-function copy(t){ navigator.clipboard.writeText(t); status.textContent='Copied link'; setTimeout(()=>status.textContent='',1500); }
-
+xhr.upload.onprogress=e=>{ if(e.lengthComputable) bar.style.width=(e.loaded/e.total*100)+'%'; };
+xhr.onload=()=>xhr.status===200?res():rej(); xhr.onerror=()=>rej(); xhr.send(fd); }); }
+async function handle(list){ prog.style.display='block'; for(let i=0;i<list.length;i++){ status.textContent=`Uploading ${i+1}/${list.length}`; bar.style.width='0%'; await upload(list[i]); } status.textContent='Done'; setTimeout(()=>prog.style.display='none',600); load(); }
+drop.onclick=()=>fileIn.click(); drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag')}; drop.ondragleave=()=>drop.classList.remove('drag'); drop.ondrop=e=>{e.preventDefault();drop.classList.remove('drag');handle(e.dataTransfer.files)};
+fileIn.onchange=()=>handle(fileIn.files); q.oninput=render;
+async function del(n){ if(!confirm('Delete '+n+'?'))return; await fetch('/api/delete?name='+encodeURIComponent(n),{method:'DELETE'}); load(); }
 load();
 </script></body></html>'''
 
-@app.get("/api/list")
-def api_list(): return jsonify(ia_list())
+@app.route("/api/list", methods=["GET"])
+def api_list():
+    return jsonify(ia_list())
 
-@app.post("/api/upload")
+@app.route("/api/upload", methods=["POST"])
 def api_upload():
     f = request.files["file"]
     ia_put(secure_filename(f.filename), f.stream, f.content_type)
-    return "",200
+    return "", 200
 
-@app.delete("/api/delete")
+@app.route("/api/delete", methods=["DELETE"])
 def api_delete():
     ia_delete(request.args.get("name",""))
-    return "",200
+    return "", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
