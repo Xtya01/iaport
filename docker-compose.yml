@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  ia-drive:
+    # Option 1: Build directly from GitHub (Portainer Stack Editor supports this)
+    build:
+      context: https://github.com/your-username/ia-drive.git#main
+      dockerfile: Dockerfile
+    # Option 2: Use prebuilt image (comment out build above, uncomment below)
+    # image: ghcr.io/your-username/ia-drive:latest
+    
+    container_name: ia-drive
+    ports:
+      - "8080:8080"
+    environment:
+      - IA_BUCKET=${IA_BUCKET:-junk-manage-caution}
+      - IA_ACCESS_KEY=${IA_ACCESS_KEY}
+      - IA_SECRET_KEY=${IA_SECRET_KEY}
+      - WORKER_MEDIA_BASE=${WORKER_MEDIA_BASE:-https://your-worker.workers.dev}
+      - LOGIN_PIN=${LOGIN_PIN:-2580}
+      - FLASK_SECRET=${FLASK_SECRET:-change-me-in-prod}
+    restart: unless-stopped
+    volumes:
+      - ia_drive_tmp:/tmp
+
+volumes:
+  ia_drive_tmp:

@@ -109,6 +109,29 @@ def upload():
     os.remove(tmp)
     return jsonify({'ok': True, 'key': key})
 
+@app.post('/api/url-upload')
+@login_required
+def url_upload():
+    data = request.json or {}
+    url = data.get('url','')
+    key = data.get('key') or url.split('/')[-1].split('?')[0][:100]
+    if not url: return jsonify({'error':'no url'}),400
+    import tempfile
+    try:
+        with requests.get(url, stream=True, timeout=600) as r:
+            r.raise_for_status()
+            tmp = tempfile.NamedTemporaryFile(delete=False)
+            for chunk in r.iter_content(1024*1024):
+                if chunk: tmp.write(chunk)
+            tmp.close()
+            item = get_item()
+            item.upload(tmp.name, key=key, access_key=IA_ACCESS, secret_key=IA_SECRET,
+                        verbose=False, retries=2)
+            os.unlink(tmp.name)
+        return jsonify({'ok': True, 'key': key})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.post('/api/delete')
 @login_required
 def delete():
