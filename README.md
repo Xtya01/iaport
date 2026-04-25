@@ -1,28 +1,15 @@
-# IA Drive - LOW Auth Edition
+# iaport - IA Drive with WebDAV
 
-Fixed version that uses Internet Archive's documented LOW authorization instead of boto3.
+Web UI + WebDAV for Internet Archive S3 using LOW auth.
 
-## Problem we solved
-- boto3 AWS4 signing → InvalidAccessKeyId on new IA accounts
-- curl with `Authorization: LOW key:secret` → 200 OK
-- This app uses direct PUT with LOW auth
+## WebDAV
+Mount at http://host:8080/dav
+User/Pass from env DAV_USER/DAV_PASS
 
-## Features
-- x-amz-auto-make-bucket:1 (auto creates item)
-- x-archive-queue-derive:0 (instant, no OCR)
-- x-archive-interactive-priority:1
-- PIN login (default 2383)
-- Lists files via archive.org/metadata API
-
-## Deploy to Portainer
-1. Stacks → Add stack → Upload docker-compose.yml
-2. Or build from GitHub: point to repo containing these files
-3. Set env vars, deploy
-
-## Deploy locally
-docker compose up -d --build
-
-Access http://localhost:8080
-
-## Security
-Rotate keys after testing - they were posted publicly in chat.
+## Deploy
+Portainer env:
+IA_BUCKET=junk-manage-caution
+IA_ACCESS_KEY=...
+IA_SECRET_KEY=...
+DAV_USER=admin
+DAV_PASS=2383
