@@ -134,7 +134,7 @@ def file_view(name):
     elif ext in AUDIO:
         preview = '<div style="padding:60px 20px;text-align:center"><div style="font-size:80px;margin-bottom:20px">🎵</div><audio id="p" controls style="width:100%;max-width:720px"><source src="'+url+'"></audio><div style="margin-top:16px;color:#9ca3af">'+name+'</div></div><link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css"><script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script><script>new Plyr("#p")</script>'
     elif ext in IMAGE:
-        preview = '<div style="text-align:center"><img src="'+url+'" style="max-width:100%;max-height:78vh;border-radius:12px;cursor:zoom-in" onclick="window.open(''+url+'','_blank')"></div>'
+        preview = '<div style="text-align:center"><img src="'+url+'" style="max-width:100%;max-height:78vh;border-radius:12px;cursor:zoom-in" onclick="window.open(\''+url+'\',\'_blank\')"></div>'
     elif ext in PDF:
         preview = '<iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file='+quote(url)+'" style="width:100%;height:78vh;border:0;border-radius:12px;background:#fff"></iframe>'
     elif ext in TEXT or ext in CODE:
