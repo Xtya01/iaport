@@ -115,14 +115,20 @@ def auth():
 @app.route('/login')
 def login_page():
     return '''<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-    <title>Login</title><style>body{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui;display:grid;place-items:center;height:100vh}
-  .b{background:#0f172a;border:1px solid #1e293b;padding:32px;border-radius:16px;width:300px;text-align:center}
-    input{width:100%;padding:12px;background:#020617;border:1px solid #334155;border-radius:8px;color:#fff;font-size:18px;text-align:center;margin:16px 0;box-sizing:border-box}
-    button{width:100%;padding:12px;background:#3b82f6;border:0;border-radius:8px;color:#fff;font-weight:600;cursor:pointer}</style></head>
-    <body><div class=b><h2>IA Drive</h2><input id=p type=password placeholder="PIN" autofocus>
-    <button onclick="fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p.value})}).then(r=>r.ok?location='/':'alert(\"Wrong PIN\")')">Unlock</button>
-    <script>document.getElementById('p').onkeydown=e=>{if(e.key==='Enter')document.querySelector('button').click()}</script>
-    </div></body></html>'''
+<title>Login</title><style>body{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui;display:grid;place-items:center;height:100vh}
+.b{background:#0f172a;border:1px solid #1e293b;padding:32px;border-radius:16px;width:300px;text-align:center}
+input{width:100%;padding:12px;background:#020617;border:1px solid #334155;border-radius:8px;color:#fff;font-size:18px;text-align:center;margin:16px 0;box-sizing:border-box}
+button{width:100%;padding:12px;background:#3b82f6;border:0;border-radius:8px;color:#fff;font-weight:600;cursor:pointer}</style></head>
+<body><div class=b><h2>IA Drive</h2><input id=p type=password placeholder="PIN" autofocus>
+<button id=b>Unlock</button></div>
+<script>
+document.getElementById('b').onclick = () => {
+  const pin = document.getElementById('p').value;
+  fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})})
+    .then(r=>r.ok?location='/':alert('Wrong PIN'))
+};
+document.getElementById('p').onkeydown = e => { if(e.key==='Enter') document.getElementById('b').click() };
+</script></body></html>'''
 
 @app.route('/auth', methods=['POST'])
 def do_auth():
