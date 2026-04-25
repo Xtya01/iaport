@@ -34,18 +34,30 @@ def ia_list():
     try:
         r = requests.get(f'https://s3.us.archive.org/{IA_BUCKET}?list-type=2',
                          auth=(IA_ACCESS, IA_SECRET), timeout=30)
-        if r.status_code!= 200: return []
+        print(f"IA LIST status: {r.status_code}") # debug
+        if r.status_code!= 200:
+            print(f"IA LIST error: {r.text[:200]}")
+            return []
+        # IA returns XML without namespace sometimes, parse simply
         import xml.etree.ElementTree as ET
         root = ET.fromstring(r.content)
         files = []
-        for c in root.findall('.//{http://s3.amazonaws.com/doc/2006-03-01/}Contents'):
-            key = c.find('{http://s3.amazonaws.com/doc/2006-03-01/}Key').text
-            size = int(c.find('{http://s3.amazonaws.com/doc/2006-03-01/}Size').text)
-            if not key.endswith('/'):
-                files.append({'name': key, 'size': size,
-                             'url': f'https://archive.org/download/{IA_BUCKET}/{key}'})
+        # find all Contents tags regardless of namespace
+        for elem in root.iter():
+            if elem.tag.endswith('Contents'):
+                key_elem = [c for c in elem if c.tag.endswith('Key')]
+                size_elem = [c for c in elem if c.tag.endswith('Size')]
+                if key_elem and size_elem:
+                    key = key_elem[0].text
+                    size = int(size_elem[0].text)
+                    if not key.endswith('/'):
+                        files.append({'name': key, 'size': size,
+                                     'url': f'https://archive.org/download/{IA_BUCKET}/{key}'})
+        print(f"IA LIST found {len(files)} files")
         return files
-    except: return []
+    except Exception as e:
+        print(f"IA LIST exception: {e}")
+        return []
 
 def fetch_url_task(tid, url):
     tasks[tid] = {'status':'starting','downloaded':0,'total':0,'uploaded':0,'speed':0,'eta':0,'log':[],'speedHistory':[]}
