@@ -59,10 +59,10 @@ def fetch_url_task(tid, url):
         filepath = f'/tmp/downloads/{tid}_{filename}'
 
         tasks[tid]['log'].append(f'Starting {filename}')
-        with sqlite3.connect(DB) as c:
-            c.execute('INSERT INTO history (filename,url,status,started) VALUES (?,?,?,?)',
+                with sqlite3.connect(DB) as c:
+            cur = c.execute('INSERT INTO history (filename,url,status,started) VALUES (?,?,?,?)',
                      (filename, url, 'running', datetime.now().strftime('%Y-%m-%d %H:%M')))
-            hid = c.lastrowid
+            hid = cur.lastrowid
 
         # FAST: aria2c with 16 connections
         cmd = ['aria2c', '-x16', '-s16', '-k1M', '--file-allocation=none',
