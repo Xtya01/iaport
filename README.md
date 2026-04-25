@@ -1,15 +1,31 @@
-# iaport - IA Drive with WebDAV
+# IA Drive
 
-Web UI + WebDAV for Internet Archive S3 using LOW auth.
+Self-hosted Internet Archive file manager with permanent storage.
 
-## WebDAV
-Mount at http://host:8080/dav
-User/Pass from env DAV_USER/DAV_PASS
+## Features
+- Drag & drop upload
+- URL fetch with live progress (KB/MB/GB, speed, ETA)
+- Dedicated pages for each file: /file/video.mp4
+- Video/audio/image/PDF preview
+- SQLite history (persists across restarts)
+- PIN login
+- Mobile responsive
 
-## Deploy
-Portainer env:
-IA_BUCKET=junk-manage-caution
-IA_ACCESS_KEY=...
-IA_SECRET_KEY=...
-DAV_USER=admin
-DAV_PASS=2383
+## Deploy (Portainer + GitHub)
+
+1. Push all files to GitHub repo
+2. Portainer → Stacks → Add Stack → Repository
+3. Set repository URL
+4. Add environment variables:
+   - IA_BUCKET
+   - IA_ACCESS_KEY
+   - IA_SECRET_KEY
+   - LOGIN_PIN
+   - WORKER_MEDIA_BASE (optional)
+5. Deploy
+
+Data persists in Docker volume `ia-drive-data` → `/data/history.db`
+
+## Local
+```bash
+docker-compose up --build
