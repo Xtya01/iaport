@@ -1,16 +1,20 @@
+version: '3.8'
 services:
-  iaport:
+  ia-drive:
     build: .
-    container_name: iaport
+    container_name: ia-drive
     ports:
       - "8080:8080"
     environment:
-      IA_BUCKET: ${IA_BUCKET}
-      IA_ACCESS_KEY: ${IA_ACCESS_KEY}
-      IA_SECRET_KEY: ${IA_SECRET_KEY}
-      LOGIN_PIN: ${LOGIN_PIN:-2383}
-      DAV_USER: ${DAV_USER:-admin}
-      DAV_PASS: ${DAV_PASS:-2383}
-      WORKER_MEDIA_BASE: ${WORKER_MEDIA_BASE}
-      FLASK_SECRET: ${FLASK_SECRET}
+      - IA_BUCKET=${IA_BUCKET}
+      - IA_ACCESS_KEY=${IA_ACCESS_KEY}
+      - IA_SECRET_KEY=${IA_SECRET_KEY}
+      - LOGIN_PIN=${LOGIN_PIN:-2383}
+      - WORKER_MEDIA_BASE=${WORKER_MEDIA_BASE}
+    volumes:
+      - ia-drive-data:/data
     restart: unless-stopped
+
+volumes:
+  ia-drive-data:
+    driver: local
