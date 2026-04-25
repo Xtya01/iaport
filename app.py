@@ -59,33 +59,23 @@ def fetch_url_task(tid, url):
         filepath = f'/tmp/downloads/{tid}_{filename}'
 
         tasks[tid]['log'].append(f'Starting {filename}')
-                with sqlite3.connect(DB) as c:
+        with sqlite3.connect(DB) as c:
             cur = c.execute('INSERT INTO history (filename,url,status,started) VALUES (?,?,?,?)',
                      (filename, url, 'running', datetime.now().strftime('%Y-%m-%d %H:%M')))
             hid = cur.lastrowid
 
-        # FAST: aria2c with 16 connections
         cmd = ['aria2c', '-x16', '-s16', '-k1M', '--file-allocation=none',
                '--allow-overwrite=true', '--console-log-level=warn',
                '--summary-interval=1', '-d', '/tmp/downloads', '-o', f'{tid}_{filename}', url]
 
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        last_update = time.time()
 
         for line in proc.stdout:
-            if time.time() - last_update > 0.5:
-                if os.path.exists(filepath):
-                    size = os.path.getsize(filepath)
-                    tasks[tid]['downloaded'] = size
-                    elapsed = time.time() - last_update
-                    if elapsed > 0:
-                        tasks[tid]['speed'] = int(size / (time.time() - (last_update - 0.5)))
-                        tasks[tid]['speedHistory'].append(tasks[tid]['speed'])
-                        if len(tasks[tid]['speedHistory']) > 60:
-                            tasks[tid]['speedHistory'].pop(0)
-                last_update = time.time()
+            if os.path.exists(filepath):
+                size = os.path.getsize(filepath)
+                tasks[tid]['downloaded'] = size
             if '[#' in line:
-                tasks[tid]['log'] = [line.strip()][-1:]
+                tasks[tid]['log'] = [line.strip()]
 
         proc.wait()
         if proc.returncode!= 0 or not os.path.exists(filepath):
