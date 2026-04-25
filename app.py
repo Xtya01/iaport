@@ -1,4 +1,4 @@
-import os, json, time, threading, sqlite3, mimetypes, requests, hashlib
+import os, json, time, threading, sqlite3, mimetypes, requests, hashlib, subprocess
 from datetime import datetime
 from flask import Flask, request, jsonify, Response, redirect, session, make_response
 
@@ -9,10 +9,10 @@ IA_BUCKET = os.environ.get('IA_BUCKET', 'junk-manage-caution')
 IA_ACCESS = os.environ.get('IA_ACCESS_KEY', '')
 IA_SECRET = os.environ.get('IA_SECRET_KEY', '')
 PIN = os.environ.get('LOGIN_PIN', '2383')
-WORKER_BASE = os.environ.get('WORKER_MEDIA_BASE', '')
 
 DB = '/data/history.db'
 os.makedirs('/data', exist_ok=True)
+os.makedirs('/tmp/downloads', exist_ok=True)
 
 def db_init():
     with sqlite3.connect(DB) as c:
@@ -25,8 +25,9 @@ tasks = {}
 
 def ia_upload(key, data, content_type):
     url = f'https://s3.us.archive.org/{IA_BUCKET}/{key}'
-    h = {'authorization': f'LOW {IA_ACCESS}:{IA_SECRET}', 'x-amz-auto-make-bucket': '1', 'x-archive-keep-old-version': '0'}
-    r = requests.put(url, data=data, headers=h, timeout=3600)
+    h = {'authorization': f'LOW {IA_ACCESS}:{IA_SECRET}', 'x-amz-auto-make-bucket': '1',
+         'x-archive-keep-old-version': '0', 'Content-Type': content_type}
+    r = requests.put(url, data=data, headers=h, timeout=7200)
     r.raise_for_status()
     return f'https://archive.org/download/{IA_BUCKET}/{key}'
 
@@ -34,88 +35,90 @@ def ia_list():
     try:
         r = requests.get(f'https://s3.us.archive.org/{IA_BUCKET}?list-type=2',
                          auth=(IA_ACCESS, IA_SECRET), timeout=30)
-        print(f"IA LIST status: {r.status_code}") # debug
-        if r.status_code!= 200:
-            print(f"IA LIST error: {r.text[:200]}")
-            return []
-        # IA returns XML without namespace sometimes, parse simply
+        if r.status_code!= 200: return []
         import xml.etree.ElementTree as ET
         root = ET.fromstring(r.content)
         files = []
-        # find all Contents tags regardless of namespace
         for elem in root.iter():
             if elem.tag.endswith('Contents'):
-                key_elem = [c for c in elem if c.tag.endswith('Key')]
-                size_elem = [c for c in elem if c.tag.endswith('Size')]
-                if key_elem and size_elem:
-                    key = key_elem[0].text
-                    size = int(size_elem[0].text)
-                    if not key.endswith('/'):
-                        files.append({'name': key, 'size': size,
-                                     'url': f'https://archive.org/download/{IA_BUCKET}/{key}'})
-        print(f"IA LIST found {len(files)} files")
+                key = next((c.text for c in elem if c.tag.endswith('Key')), None)
+                size = next((c.text for c in elem if c.tag.endswith('Size')), '0')
+                if key and not key.endswith('/'):
+                    files.append({'name': key, 'size': int(size),
+                                 'url': f'https://archive.org/download/{IA_BUCKET}/{key}'})
         return files
-    except Exception as e:
-        print(f"IA LIST exception: {e}")
-        return []
+    except: return []
 
 def fetch_url_task(tid, url):
     tasks[tid] = {'status':'starting','downloaded':0,'total':0,'uploaded':0,'speed':0,'eta':0,'log':[],'speedHistory':[]}
+    filepath = None
     try:
         filename = url.split('/')[-1].split('?')[0] or f'file_{int(time.time())}'
+        filename = "".join(c for c in filename if c.isalnum() or c in '._- ')[:100].strip()
         tasks[tid]['filename'] = filename
-        tasks[tid]['log'].append(f'Starting {filename}')
+        filepath = f'/tmp/downloads/{tid}_{filename}'
 
+        tasks[tid]['log'].append(f'Starting {filename}')
         with sqlite3.connect(DB) as c:
             c.execute('INSERT INTO history (filename,url,status,started) VALUES (?,?,?,?)',
                      (filename, url, 'running', datetime.now().strftime('%Y-%m-%d %H:%M')))
-            hid = c.execute('SELECT last_insert_rowid()').fetchone()[0]
+            hid = c.lastrowid
 
-        r = requests.get(url, stream=True, timeout=30)
-        r.raise_for_status()
-        total = int(r.headers.get('content-length', 0))
-        tasks[tid]['total'] = total
-        data = bytearray()
-        start = time.time()
-        last_t = start
-        last_b = 0
+        # FAST: aria2c with 16 connections
+        cmd = ['aria2c', '-x16', '-s16', '-k1M', '--file-allocation=none',
+               '--allow-overwrite=true', '--console-log-level=warn',
+               '--summary-interval=1', '-d', '/tmp/downloads', '-o', f'{tid}_{filename}', url]
 
-        for chunk in r.iter_content(8192):
-            if chunk:
-                data.extend(chunk)
-                tasks[tid]['downloaded'] += len(chunk)
-                now = time.time()
-                if now - last_t >= 0.5:
-                    spd = (tasks[tid]['downloaded'] - last_b) / (now - last_t)
-                    tasks[tid]['speed'] = int(spd)
-                    tasks[tid]['speedHistory'].append(int(spd))
-                    if len(tasks[tid]['speedHistory']) > 60: tasks[tid]['speedHistory'].pop(0)
-                    if total and spd > 0: tasks[tid]['eta'] = int((total - tasks[tid]['downloaded']) / spd)
-                    last_t, last_b = now, tasks[tid]['downloaded']
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        last_update = time.time()
 
+        for line in proc.stdout:
+            if time.time() - last_update > 0.5:
+                if os.path.exists(filepath):
+                    size = os.path.getsize(filepath)
+                    tasks[tid]['downloaded'] = size
+                    elapsed = time.time() - last_update
+                    if elapsed > 0:
+                        tasks[tid]['speed'] = int(size / (time.time() - (last_update - 0.5)))
+                        tasks[tid]['speedHistory'].append(tasks[tid]['speed'])
+                        if len(tasks[tid]['speedHistory']) > 60:
+                            tasks[tid]['speedHistory'].pop(0)
+                last_update = time.time()
+            if '[#' in line:
+                tasks[tid]['log'] = [line.strip()][-1:]
+
+        proc.wait()
+        if proc.returncode!= 0 or not os.path.exists(filepath):
+            raise Exception("aria2c download failed")
+
+        filesize = os.path.getsize(filepath)
+        tasks[tid]['total'] = filesize
+        tasks[tid]['downloaded'] = filesize
         tasks[tid]['status'] = 'uploading'
-        tasks[tid]['log'].append(f'Downloaded {len(data)} bytes, uploading to IA...')
+        tasks[tid]['log'].append(f'Downloaded {filesize//1024//1024}MB, uploading...')
 
         ct = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-        ia_upload(filename, bytes(data), ct)
+        with open(filepath, 'rb') as f:
+            ia_upload(filename, f, ct)
 
-        tasks[tid]['uploaded'] = len(data)
+        tasks[tid]['uploaded'] = filesize
         tasks[tid]['status'] = 'complete'
         tasks[tid]['log'].append('Complete')
+        os.remove(filepath)
 
         with sqlite3.connect(DB) as c:
             c.execute('UPDATE history SET status=?,size=?,speed=?,finished=? WHERE id=?',
-                     ('complete', len(data), tasks[tid]['speed'],
+                     ('complete', filesize, tasks[tid]['speed'],
                       datetime.now().strftime('%Y-%m-%d %H:%M'), hid))
     except Exception as e:
         tasks[tid]['status'] = 'error'
         tasks[tid]['log'].append(f'Error: {str(e)}')
-        with sqlite3.connect(DB) as c:
-            c.execute('UPDATE history SET status=? WHERE url=?', ('error', url))
+        if filepath and os.path.exists(filepath):
+            try: os.remove(filepath)
+            except: pass
 
 @app.before_request
 def auth():
-    # FIX v4.2: allow /auth to work
     if request.path in ['/login', '/auth', '/health'] or request.path.startswith('/static'):
         return
     if request.path.startswith('/api') or request.path.startswith('/file'):
@@ -134,12 +137,8 @@ button{width:100%;padding:12px;background:#3b82f6;border:0;border-radius:8px;col
 <body><div class=b><h2>IA Drive</h2><input id=p type=password placeholder="PIN" autofocus>
 <button id=b>Unlock</button></div>
 <script>
-document.getElementById('b').onclick = () => {
-  const pin = document.getElementById('p').value;
-  fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})})
-    .then(r=>r.ok?location='/':alert('Wrong PIN'))
-};
-document.getElementById('p').onkeydown = e => { if(e.key==='Enter') document.getElementById('b').click() };
+document.getElementById('b').onclick=()=>{fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:document.getElementById('p').value})}).then(r=>r.ok?location='/':alert('Wrong PIN'))};
+document.getElementById('p').onkeydown=e=>{if(e.key==='Enter')document.getElementById('b').click()};
 </script></body></html>'''
 
 @app.route('/auth', methods=['POST'])
@@ -156,7 +155,8 @@ def health(): return 'ok'
 
 @app.route('/')
 def index():
-    return '''<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+    # (same UI as v4.2 - omitted for brevity, use previous full HTML)
+    return open(__file__).read().split("'''<!doctype")[1].split("'''")[0].insert(0,"<!doctype") if False else '''<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>IA Drive</title><link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel=stylesheet>
 <style>:root{--b:#020617;--s:#0f172a;--m:#1e293b;--t:#334155;--a:#3b82f6;--g:#22c55e;--r:#ef4444;--w:#e2e8f0;--d:#94a3b8}
 *{box-sizing:border-box}body{margin:0;background:var(--b);color:var(--w);font-family:system-ui,-apple-system,Segoe UI,Roboto;overflow-x:hidden}
@@ -167,7 +167,7 @@ def index():
 .menu{display:flex;flex-direction:column;gap:4px}
 .menu a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;color:var(--d);text-decoration:none;transition:.15s;cursor:pointer}
 .menu a:hover{background:var(--m);color:var(--w)}.menu a.active{background:var(--a);color:#fff}
-.menu a i{font-size:18px;width:20px}.menu.count{margin-left:auto;font-size:12px;background:var(--t);padding:2px 6px;border-radius:10px}
+.menu a i{font-size:18px;width:20px}.count{margin-left:auto;font-size:12px;background:var(--t);padding:2px 6px;border-radius:10px}
 .main{display:flex;flex-direction:column;min-width:0}
 .topbar{height:56px;background:var(--s);border-bottom:1px solid var(--m);display:flex;align-items:center;padding:0 20px;gap:16px;position:sticky;top:0;z-index:10}
 .hamburger{display:none;background:0;border:0;color:var(--w);font-size:22px;cursor:pointer}
@@ -185,7 +185,7 @@ def index():
 .drop:hover,.drop.drag{border-color:var(--a);background:rgba(59,130,246,.05)}
 .url-box{display:flex;gap:8px;margin-top:16px}.url-box input{flex:1;background:var(--s);border:1px solid var(--m);border-radius:8px;padding:10px 12px;color:var(--w)}
 .btn{background:var(--a);color:#fff;border:0;padding:10px 18px;border-radius:8px;font-weight:500;cursor:pointer;transition:.15s}
-.btn:hover{opacity:.9}.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:hover{opacity:.9}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
 .modal.show{display:flex}.modal-box{background:var(--s);border:1px solid var(--m);border-radius:16px;width:100%;max-width:480px;padding:24px}
 .progress{height:6px;background:var(--b);border-radius:3px;overflow:hidden;margin:12px 0}.progress-bar{height:100%;background:var(--a);width:0%;transition:.3s}
@@ -203,7 +203,7 @@ td{padding:12px;border-bottom:1px solid rgba(30,41,59,.5);font-size:13px}.badge{
 </style></head><body>
 <div class=app>
 <aside class=sidebar id=sidebar>
-<div class=logo><i class="ri-hard-drive-3-fill"></i><span>IA Drive</span></div>
+<div class=logo><i class="ri-hard-drive-3-fill"></i><span>IA Drive v4.4</span></div>
 <nav class=menu>
 <a data-page=upload class=active><i class="ri-upload-cloud-2-line"></i><span>Upload</span></a>
 <a data-page=files data-filter=all><i class="ri-folder-2-line"></i><span>All Files</span><span class=count id=c-all>0</span></a>
@@ -223,8 +223,8 @@ td{padding:12px;border-bottom:1px solid rgba(30,41,59,.5);font-size:13px}.badge{
 </div>
 <div class=content>
 <div id=view-upload class="page-view active">
-<div class=drop id=dropzone><i class="ri-upload-cloud-2-line" style="font-size:48px;color:var(--d);margin-bottom:12px"></i><div style="font-weight:500;margin-bottom:4px">Drop files here or click to browse</div><div style="font-size:13px;color:var(--d)">Stored permanently on Internet Archive</div><input type=file id=file-input multiple hidden></div>
-<div class=url-box><input id=url-input placeholder="Paste direct download URL (https://...)" onkeydown="if(event.key==='Enter')uploadFromUrl()"><button class=btn onclick="uploadFromUrl()"><i class="ri-download-line"></i> Fetch</button></div>
+<div class=drop id=dropzone><i class="ri-upload-cloud-2-line" style="font-size:48px;color:var(--d);margin-bottom:12px"></i><div style="font-weight:500;margin-bottom:4px">Drop files here or click to browse</div><div style="font-size:13px;color:var(--d)">16x parallel fetch enabled</div><input type=file id=file-input multiple hidden></div>
+<div class=url-box><input id=url-input placeholder="Paste direct download URL" onkeydown="if(event.key==='Enter')uploadFromUrl()"><button class=btn onclick="uploadFromUrl()"><i class="ri-download-line"></i> Fast Fetch</button></div>
 </div>
 <div id=view-files class="page-view"><div class=card-grid id=file-grid></div></div>
 <div id=view-history class="page-view">
@@ -240,20 +240,19 @@ td{padding:12px;border-bottom:1px solid rgba(30,41,59,.5);font-size:13px}.badge{
 let allFiles=[], historyData=[], currentFilter='all', currentPage='upload';
 const types={video:['mp4','webm','mov','mkv','avi','m4v'],image:['png','jpg','jpeg','gif','webp','svg','bmp','avif'],audio:['mp3','wav','flac','m4a','ogg','aac'],doc:['pdf','doc','docx','txt','md','xls','xlsx','ppt','pptx','csv','rtf']};
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('show')}
-function showToast(msg,type='info'){const t=document.getElementById('toast');const icons={info:'ri-information-line',success:'ri-check-line',error:'ri-error-warning-line'};const colors={info:'#1e293b',success:'#052e16',error:'#450a0a'};t.style.borderColor=colors[type];t.innerHTML=`<i class="${icons[type]}"></i><span>${msg}</span>`;t.style.display='flex';setTimeout(()=>t.style.display='none',3000)}
-function showConfirm(msg,title='Confirm'){return new Promise(res=>{const m=document.createElement('div');m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000';m.innerHTML=`<div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:24px;max-width:400px;width:90%"><h3 style="margin:0 0 8px;font-size:16px">${title}</h3><p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.5">${msg}</p><div style="display:flex;gap:10px;justify-content:flex-end"><button id=c style="padding:8px 16px;background:#334155;border:0;border-radius:8px;color:#cbd5e1;cursor:pointer">Cancel</button><button id=o style="padding:8px 16px;background:#3b82f6;border:0;border-radius:8px;color:#fff;cursor:pointer">OK</button></div></div>`;document.body.appendChild(m);m.querySelector('#o').onclick=()=>{m.remove();res(true)};m.querySelector('#c').onclick=()=>{m.remove();res(false)};m.onclick=e=>{if(e.target===m){m.remove();res(false)}}})}
+function showToast(msg,type='info'){const t=document.getElementById('toast');t.innerHTML=`<i class="ri-${type==='success'?'check':type==='error'?'error-warning':'information'}-line"></i><span>${msg}</span>`;t.style.display='flex';setTimeout(()=>t.style.display='none',3000)}
 function switchPage(page,filter){currentPage=page;currentFilter=filter||'all';document.querySelectorAll('.menu a').forEach(a=>a.classList.remove('active'));document.querySelector(`[data-page="${page}"]${filter?`[data-filter="${filter}"]`:''}`)?.classList.add('active');document.querySelectorAll('.page-view').forEach(v=>v.classList.remove('active'));document.getElementById('view-'+page).classList.add('active');document.getElementById('page-title').textContent=page==='upload'?'Upload':page==='files'?(filter?filter.charAt(0).toUpperCase()+filter.slice(1):'Files'):'History';if(page==='files')loadFiles();if(page==='history')loadHistory();if(window.innerWidth<768)toggleSidebar()}
 document.querySelectorAll('.menu a').forEach(a=>a.onclick=()=>switchPage(a.dataset.page,a.dataset.filter));
 function getExt(n){return n.split('.').pop().toLowerCase()}
 function getType(n){const e=getExt(n);for(const[k,v]of Object.entries(types))if(v.includes(e))return k;return'other'}
-function fmt(b){if(b===0)return'0 B';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB'}
-async function loadFiles(){try{const r=await fetch('/api/list');allFiles=await r.json();const c={all:allFiles.length,video:0,image:0,audio:0,doc:0};allFiles.forEach(f=>{const t=getType(f.name);if(c[t]!=null)c[t]++});Object.entries(c).forEach(([k,v])=>{const e=document.getElementById('c-'+k);if(e)e.textContent=v});renderFiles()}catch(e){showToast('Failed to load','error')}}
-function renderFiles(){const searchEl=document.getElementById('search');const g=document.getElementById('file-grid');const q=searchEl.value.toLowerCase();const list=allFiles.filter(f=>(currentFilter==='all'||getType(f.name)===currentFilter)&&f.name.toLowerCase().includes(q));g.innerHTML='';if(!list.length){g.innerHTML='<div class=empty><i class="ri-folder-open-line"></i><div>No files</div></div>';return}list.forEach(f=>{const e=getExt(f.name);const isI=types.image.includes(e);const isV=types.video.includes(e);const thumb=isI?`<img src="${f.url}" loading=lazy>`:isV?`<video src="${f.url}#t=0.5" muted></video>`:`<i class="ri-file-line"></i>`;const a=document.createElement('a');a.className='card';a.href='/file/'+encodeURIComponent(f.name);a.innerHTML=`<div class=thumb>${thumb}</div><div class=info><div class=name title="${f.name}">${f.name}</div><div class=meta><span>${e.toUpperCase()}</span><span>${fmt(f.size)}</span></div></div>`;g.appendChild(a)})}
-async function loadHistory(){try{const r=await fetch('/api/history');historyData=await r.json();renderHistory()}catch(e){showToast('Failed to load history','error')}}
-function renderHistory(){const q=(document.getElementById('hist-search')?.value||'').toLowerCase();const body=document.getElementById('hist-body');const list=historyData.filter(h=>(h.filename+h.url).toLowerCase().includes(q));if(!list.length){body.innerHTML='<tr><td colspan=6 style="text-align:center;padding:40px;color:var(--d)">No history</td></tr>';return}body.innerHTML=list.map(h=>{const badge=h.status==='complete'?'ok':h.status==='error'?'err':'run';const icon=h.status==='complete'?'✓':h.status==='error'?'✗':'⟳';return`<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${h.filename}">${h.filename||'-'}</td><td>${fmt(h.size||0)}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${h.url}">${(h.url||'').slice(0,40)}</td><td>${h.started||''}</td><td><span class="badge ${badge}">${icon} ${h.status}</span></td><td>${h.speed?fmt(h.speed)+'/s':'-'}</td></tr>`}).join('')}
-async function uploadFile(f){const d=new FormData();d.append('file',f);const r=await fetch('/api/upload',{method:'POST',body:d});if(!r.ok)throw new Error()}
-async function handleFiles(list){if(!list.length)return;const modal=document.getElementById('modal');const modalTitle=document.getElementById('modal-title');const modalStatus=document.getElementById('modal-status');const progressBar=document.getElementById('progress-bar');const modalList=document.getElementById('modal-log');const speedChart=document.getElementById('speed-chart');modal.classList.add('show');modalTitle.textContent='Uploading';modalStatus.textContent='';progressBar.style.width='0%';modalList.innerHTML='';speedChart.style.display='none';let ok=0;for(let i=0;i<list.length;i++){const f=list[i];modalStatus.textContent=`${i+1}/${list.length}: ${f.name}`;progressBar.style.width=Math.round(i/list.length*100)+'%';modalList.innerHTML+=`<div>• ${f.name}</div>`;try{await uploadFile(f);ok++;modalList.lastChild.innerHTML+=' <span style="color:var(--g)">✓</span>'}catch{modalList.lastChild.innerHTML+=' <span style="color:var(--r)">✗</span>'}}progressBar.style.width='100%';modalStatus.textContent=`Done ${ok}/${list.length}`;setTimeout(()=>{modal.classList.remove('show');showToast(`${ok} uploaded`,'success');loadFiles()},1000)}
-async function uploadFromUrl(){const url=document.getElementById('url-input').value.trim();if(!url)return showToast('Enter URL','error');const ok=await showConfirm(`Fetch file from this URL?<br><span style="opacity:.7;font-size:12px;word-break:break-all">${url.slice(0,80)}</span>`,'Fetch URL');if(!ok)return;const r=await fetch('/api/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});const{task_id}=await r.json();const modal=document.getElementById('modal');const modalTitle=document.getElementById('modal-title');const modalStatus=document.getElementById('modal-status');const progressBar=document.getElementById('progress-bar');const modalList=document.getElementById('modal-log');const speedChart=document.getElementById('speed-chart');modal.classList.add('show');modalTitle.textContent='Fetching URL';speedChart.style.display='block';const ctx=speedChart.getContext('2d');let speeds=[];const poll=setInterval(async()=>{const p=await(await fetch(`/api/progress/${task_id}`)).json();if(p.status==='notfound')return;const dl=fmt(p.downloaded),tot=p.total?fmt(p.total):'?',up=fmt(p.uploaded),spd=p.speed?fmt(p.speed)+'/s':'-',eta=p.eta?`${Math.floor(p.eta/60)}m${p.eta%60}s`:'-';modalStatus.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"><div>Down: <b>${dl} / ${tot}</b></div><div>Speed: <b>${spd}</b></div><div>Up: <b>${up}</b></div><div>ETA: <b>${eta}</b></div></div>`;const pct=p.total?(p.downloaded/p.total*70):30;const upct=p.status==='uploading'?70+(p.uploaded/Math.max(p.downloaded,1)*30):pct;progressBar.style.width=Math.min(upct,100)+'%';if(p.speedHistory){speeds=p.speedHistory.slice(-60);ctx.clearRect(0,0,392,60);ctx.beginPath();ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;speeds.forEach((s,i)=>{const x=i*392/speeds.length;const y=60-(s/Math.max(...speeds,1))*50;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke()}if(p.log)modalList.innerHTML=p.log.map(l=>`<div>${l}</div>`).join('');if(p.status==='complete'||p.status==='error'){clearInterval(poll);setTimeout(()=>{modal.classList.remove('show');showToast(p.status==='complete'?'Fetch complete':'Fetch failed',p.status==='complete'?'success':'error');if(p.status==='complete'){document.getElementById('url-input').value='';loadFiles();loadHistory()}},800)}},500)}
+function fmt(b){if(!b)return'0 B';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB'}
+async function loadFiles(){try{const r=await fetch('/api/list');allFiles=await r.json();const c={all:allFiles.length,video:0,image:0,audio:0,doc:0};allFiles.forEach(f=>{const t=getType(f.name);if(c[t]!=null)c[t]++});Object.entries(c).forEach(([k,v])=>document.getElementById('c-'+k).textContent=v);renderFiles()}catch{}}
+function renderFiles(){const q=document.getElementById('search').value.toLowerCase();const g=document.getElementById('file-grid');const list=allFiles.filter(f=>(currentFilter==='all'||getType(f.name)===currentFilter)&&f.name.toLowerCase().includes(q));g.innerHTML='';if(!list.length){g.innerHTML='<div class=empty><i class="ri-folder-open-line"></i><div>No files</div></div>';return}list.forEach(f=>{const e=getExt(f.name);const isI=types.image.includes(e);const isV=types.video.includes(e);const thumb=isI?`<img src="${f.url}" loading=lazy>`:isV?`<video src="${f.url}#t=0.5" muted></video>`:`<i class="ri-file-line"></i>`;g.innerHTML+=`<a class=card href="/file/${encodeURIComponent(f.name)}"><div class=thumb>${thumb}</div><div class=info><div class=name title="${f.name}">${f.name}</div><div class=meta><span>${e.toUpperCase()}</span><span>${fmt(f.size)}</span></div></div></a>`})}
+async function loadHistory(){try{const r=await fetch('/api/history');historyData=await r.json();renderHistory()}catch{}}
+function renderHistory(){const q=(document.getElementById('hist-search')?.value||'').toLowerCase();const body=document.getElementById('hist-body');const list=historyData.filter(h=>(h.filename+h.url).toLowerCase().includes(q));body.innerHTML=list.map(h=>`<tr><td>${h.filename}</td><td>${fmt(h.size)}</td><td>${h.url.slice(0,40)}</td><td>${h.started}</td><td><span class="badge ${h.status==='complete'?'ok':h.status==='error'?'err':'run'}">${h.status}</span></td><td>${h.speed?fmt(h.speed)+'/s':'-'}</td></tr>`).join('')||'<tr><td colspan=6 style="text-align:center;padding:40px;color:var(--d)">No history</td></tr>'}
+async function uploadFile(f){const d=new FormData();d.append('file',f);await fetch('/api/upload',{method:'POST',body:d})}
+async function handleFiles(list){if(!list.length)return;const m=document.getElementById('modal');m.classList.add('show');document.getElementById('modal-title').textContent='Uploading';let ok=0;for(let i=0;i<list.length;i++){document.getElementById('modal-status').textContent=`${i+1}/${list.length}: ${list[i].name}`;document.getElementById('progress-bar').style.width=Math.round(i/list.length*100)+'%';try{await uploadFile(list[i]);ok++}catch{}}document.getElementById('progress-bar').style.width='100%';setTimeout(()=>{m.classList.remove('show');showToast(`${ok} uploaded`,'success');loadFiles()},800)}
+async function uploadFromUrl(){const url=document.getElementById('url-input').value.trim();if(!url)return;const r=await fetch('/api/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});const{task_id}=await r.json();const m=document.getElementById('modal');m.classList.add('show');document.getElementById('modal-title').textContent='Fast Fetch (16x)';document.getElementById('speed-chart').style.display='block';const ctx=document.getElementById('speed-chart').getContext('2d');const poll=setInterval(async()=>{const p=await(await fetch(`/api/progress/${task_id}`)).json();document.getElementById('modal-status').innerHTML=`Down: <b>${fmt(p.downloaded)}</b> • Speed: <b>${fmt(p.speed)}/s</b>`;document.getElementById('progress-bar').style.width=(p.total?Math.min(100,p.downloaded/p.total*100):30)+'%';if(p.speedHistory){ctx.clearRect(0,0,392,60);ctx.beginPath();ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;p.speedHistory.slice(-60).forEach((s,i)=>{const x=i*6.5;const y=60-(s/Math.max(...p.speedHistory,1))*50;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke()}document.getElementById('modal-log').innerHTML=(p.log||[]).map(l=>`<div>${l}</div>`).join('');if(p.status==='complete'||p.status==='error'){clearInterval(poll);setTimeout(()=>{m.classList.remove('show');showToast(p.status==='complete'?'Complete':'Failed',p.status);loadFiles();loadHistory()},1000)}},500)}
 const dz=document.getElementById('dropzone'),fi=document.getElementById('file-input');dz.onclick=()=>fi.click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag')};dz.ondragleave=()=>dz.classList.remove('drag');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag');handleFiles([...e.dataTransfer.files])};fi.onchange=()=>handleFiles([...fi.files]);switchPage('upload');loadFiles();
 </script></body></html>'''
 
@@ -263,10 +262,10 @@ def api_list(): return jsonify(ia_list())
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
     f = request.files['file']
-    data = f.read()
     ct = f.content_type or mimetypes.guess_type(f.filename)[0] or 'application/octet-stream'
-    url = ia_upload(f.filename, data, ct)
-    return jsonify({'url': url, 'name': f.filename})
+    # stream directly
+    url = ia_upload(f.filename, f.stream, ct)
+    return jsonify({'url': url})
 
 @app.route('/api/upload-url', methods=['POST'])
 def api_upload_url():
@@ -286,36 +285,9 @@ def api_history():
 
 @app.route('/file/<path:name>')
 def file_page(name):
-    files = ia_list()
-    f = next((x for x in files if x['name'] == name), None)
+    f = next((x for x in ia_list() if x['name'] == name), None)
     if not f: return 'Not found', 404
-    url = f['url']
-    ext = name.split('.')[-1].lower()
-    is_video = ext in ['mp4','webm','mov','mkv','avi','m4v']
-    is_image = ext in ['png','jpg','jpeg','gif','webp','svg','bmp','avif']
-    is_audio = ext in ['mp3','wav','flac','m4a','ogg','aac']
-    is_pdf = ext == 'pdf'
-
-    preview = ''
-    if is_video: preview = f'<video controls style="max-width:100%;max-height:70vh;border-radius:12px;background:#000" src="{url}"></video>'
-    elif is_image: preview = f'<img src="{url}" style="max-width:100%;max-height:70vh;border-radius:12px;object-fit:contain">'
-    elif is_audio: preview = f'<audio controls style="width:100%;max-width:600px" src="{url}"></audio>'
-    elif is_pdf: preview = f'<iframe src="{url}" style="width:100%;height:70vh;border:0;border-radius:12px;background:#fff"></iframe>'
-    else: preview = f'<div style="padding:60px"><i class="ri-file-line" style="font-size:64px;opacity:.3"></i></div>'
-
-    return f'''<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>{name}</title>
-    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel=stylesheet>
-    <style>body{{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui;display:flex;flex-direction:column;min-height:100vh}}
-    header{{background:#0f172a;border-bottom:1px solid #1e293b;padding:14px 20px;display:flex;align-items:center;gap:12px}}
-    header a{{color:#94a3b8;text-decoration:none;display:flex;align-items:center;gap:6px}}header a:hover{{color:#fff}}
-    main{{flex:1;display:grid;place-items:center;padding:24px;text-align:center}}.meta{{margin-top:16px;color:#94a3b8;font-size:14px}}
-  .actions{{margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}}
-  .btn{{background:#3b82f6;color:#fff;border:0;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;font-size:14px}}
-  .btn.secondary{{background:#1e293b}}</style></head><body>
-    <header><a href="/"><i class="ri-arrow-left-line"></i> Back</a><div style="flex:1"></div><span style="font-weight:500">{name}</span></header>
-    <main><div>{preview}<div class=meta>{(f["size"]/1024/1024):.2f} MB</div>
-    <div class=actions><a class=btn href="{url}" download><i class="ri-download-line"></i> Download</a>
-    <a class=btn secondary href="{url}" target=_blank><i class="ri-external-link-line"></i> Open Direct</a></div></div></main></body></html>'''
+    return f'''<meta http-equiv="refresh" content="0; url={f['url']}">'''
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
