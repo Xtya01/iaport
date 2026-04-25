@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, Response, redirect, session, make_response
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get('SECRET_KEY', 'ia-drive-stable-key-v4')
 
 IA_BUCKET = os.environ.get('IA_BUCKET', 'junk-manage-caution')
 IA_ACCESS = os.environ.get('IA_ACCESS_KEY', '')
@@ -103,22 +103,25 @@ def fetch_url_task(tid, url):
 
 @app.before_request
 def auth():
-    if request.path.startswith('/api') or request.path.startswith('/file') or request.path == '/health':
+    # FIX v4.2: allow /auth to work
+    if request.path in ['/login', '/auth', '/health'] or request.path.startswith('/static'):
+        return
+    if request.path.startswith('/api') or request.path.startswith('/file'):
         if not session.get('auth') and request.cookies.get('pin')!= PIN:
             return jsonify({'error':'auth'}), 401
-    if request.path not in ['/login','/health'] and not request.path.startswith('/static'):
-        if not session.get('auth') and request.cookies.get('pin')!= PIN:
-            return redirect('/login')
+    if not session.get('auth') and request.cookies.get('pin')!= PIN:
+        return redirect('/login')
 
 @app.route('/login')
 def login_page():
     return '''<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
     <title>Login</title><style>body{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui;display:grid;place-items:center;height:100vh}
-   .b{background:#0f172a;border:1px solid #1e293b;padding:32px;border-radius:16px;width:300px;text-align:center}
+  .b{background:#0f172a;border:1px solid #1e293b;padding:32px;border-radius:16px;width:300px;text-align:center}
     input{width:100%;padding:12px;background:#020617;border:1px solid #334155;border-radius:8px;color:#fff;font-size:18px;text-align:center;margin:16px 0;box-sizing:border-box}
     button{width:100%;padding:12px;background:#3b82f6;border:0;border-radius:8px;color:#fff;font-weight:600;cursor:pointer}</style></head>
     <body><div class=b><h2>IA Drive</h2><input id=p type=password placeholder="PIN" autofocus>
-    <button onclick="fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p.value})}).then(r=>r.ok?location='/':'')">Unlock</button>
+    <button onclick="fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p.value})}).then(r=>r.ok?location='/':'alert(\"Wrong PIN\")')">Unlock</button>
+    <script>document.getElementById('p').onkeydown=e=>{if(e.key==='Enter')document.querySelector('button').click()}</script>
     </div></body></html>'''
 
 @app.route('/auth', methods=['POST'])
@@ -126,7 +129,7 @@ def do_auth():
     if request.json.get('pin') == PIN:
         session['auth'] = True
         resp = make_response({'ok': True})
-        resp.set_cookie('pin', PIN, max_age=86400*30)
+        resp.set_cookie('pin', PIN, max_age=86400*30, httponly=True, samesite='Lax')
         return resp
     return {'error': 'bad pin'}, 403
 
@@ -156,10 +159,10 @@ def index():
 .page-view{display:none}.page-view.active{display:block}
 .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-top:16px}
 .card{background:var(--s);border:1px solid var(--m);border-radius:12px;overflow:hidden;transition:.2s;cursor:pointer;text-decoration:none;color:inherit;display:block}
-.card:hover{transform:translateY(-2px);border-color:var(--t)}.card.thumb{aspect-ratio:16/10;background:var(--b);display:grid;place-items:center;overflow:hidden}
-.card.thumb img,.card.thumb video{width:100%;height:100%;object-fit:cover}.card.thumb i{font-size:32px;color:var(--d)}
-.card.info{padding:12px}.card.name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card.meta{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--d)}
+.card:hover{transform:translateY(-2px);border-color:var(--t)}.thumb{aspect-ratio:16/10;background:var(--b);display:grid;place-items:center;overflow:hidden}
+.thumb img,.thumb video{width:100%;height:100%;object-fit:cover}.thumb i{font-size:32px;color:var(--d)}
+.info{padding:12px}.name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--d)}
 .drop{border:2px dashed var(--m);border-radius:12px;padding:48px;text-align:center;background:var(--s);cursor:pointer;transition:.2s}
 .drop:hover,.drop.drag{border-color:var(--a);background:rgba(59,130,246,.05)}
 .url-box{display:flex;gap:8px;margin-top:16px}.url-box input{flex:1;background:var(--s);border:1px solid var(--m);border-radius:8px;padding:10px 12px;color:var(--w)}
@@ -270,17 +273,17 @@ def file_page(name):
     if not f: return 'Not found', 404
     url = f['url']
     ext = name.split('.')[-1].lower()
-    is_video = ext in types['video']
-    is_image = ext in types['image']
-    is_audio = ext in types['audio']
+    is_video = ext in ['mp4','webm','mov','mkv','avi','m4v']
+    is_image = ext in ['png','jpg','jpeg','gif','webp','svg','bmp','avif']
+    is_audio = ext in ['mp3','wav','flac','m4a','ogg','aac']
     is_pdf = ext == 'pdf'
 
     preview = ''
     if is_video: preview = f'<video controls style="max-width:100%;max-height:70vh;border-radius:12px;background:#000" src="{url}"></video>'
     elif is_image: preview = f'<img src="{url}" style="max-width:100%;max-height:70vh;border-radius:12px;object-fit:contain">'
-    elif is_audio: preview = f'<audio controls style="width:100%;max-width:600px" src="{url}"></audio><div style="margin-top:20px"><i class="ri-music-2-line" style="font-size:64px;opacity:.3"></i></div>'
+    elif is_audio: preview = f'<audio controls style="width:100%;max-width:600px" src="{url}"></audio>'
     elif is_pdf: preview = f'<iframe src="{url}" style="width:100%;height:70vh;border:0;border-radius:12px;background:#fff"></iframe>'
-    else: preview = f'<div style="padding:60px"><i class="ri-file-line" style="font-size:64px;opacity:.3"></i><p>Preview not available</p></div>'
+    else: preview = f'<div style="padding:60px"><i class="ri-file-line" style="font-size:64px;opacity:.3"></i></div>'
 
     return f'''<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>{name}</title>
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel=stylesheet>
@@ -288,15 +291,13 @@ def file_page(name):
     header{{background:#0f172a;border-bottom:1px solid #1e293b;padding:14px 20px;display:flex;align-items:center;gap:12px}}
     header a{{color:#94a3b8;text-decoration:none;display:flex;align-items:center;gap:6px}}header a:hover{{color:#fff}}
     main{{flex:1;display:grid;place-items:center;padding:24px;text-align:center}}.meta{{margin-top:16px;color:#94a3b8;font-size:14px}}
-   .actions{{margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}}
-   .btn{{background:#3b82f6;color:#fff;border:0;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;font-size:14px}}
-   .btn.secondary{{background:#1e293b}}</style></head><body>
+  .actions{{margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}}
+  .btn{{background:#3b82f6;color:#fff;border:0;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;font-size:14px}}
+  .btn.secondary{{background:#1e293b}}</style></head><body>
     <header><a href="/"><i class="ri-arrow-left-line"></i> Back</a><div style="flex:1"></div><span style="font-weight:500">{name}</span></header>
-    <main><div>{preview}<div class=meta>{(f["size"]/1024/1024):.2f} MB • {ext.upper()}</div>
+    <main><div>{preview}<div class=meta>{(f["size"]/1024/1024):.2f} MB</div>
     <div class=actions><a class=btn href="{url}" download><i class="ri-download-line"></i> Download</a>
-    <a class=btn secondary href="{url}" target=_blank><i class="ri-external-link-line"></i> Open Direct</a>
-    <button class=btn secondary onclick="navigator.clipboard.writeText('{url}');this.innerHTML='<i class=ri-check-line></i> Copied'"><i class="ri-clipboard-line"></i> Copy Link</button>
-    </div></div></main></body></html>'''
+    <a class=btn secondary href="{url}" target=_blank><i class="ri-external-link-line"></i> Open Direct</a></div></div></main></body></html>'''
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
